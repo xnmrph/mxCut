@@ -40,14 +40,15 @@ makensis -DVERSION=0.1.0 -DDIST="$(cygpath -w "$PWD/dist/mxCut")" packaging/wind
 
 - `src/MpvItem.*` is the video preview, a Qt Quick item drawn by libmpv's OpenGL render API.
 - `src/TrimJob.*` runs one FFmpeg trim and reports its progress.
-- `src/ExportQueue.*` is folder mode's queue of TrimJobs, run a few at a time.
+- `src/ExportQueue.*` is the export queue of TrimJobs, run a few at a time.
 - `src/VideoFolderModel.*` lists the videos in a folder, in natural order, with their queue state.
 - `src/Settings.*` holds the saved choices; `src/Encoders.*` maps each encoder to FFmpeg arguments, and
   `src/EncoderProbe.*` finds FFmpeg and tests which encoders work.
 - `src/MediaPreview.*` makes the timeline's thumbnails and waveform with FFmpeg and caches them;
   `src/WaveformView.*` draws the waveform.
 - `qml/Main.qml` is the window, `qml/Timeline.qml` the ruler, thumbnail and audio tracks with the
-  in/out handles, `qml/FileSidebar.qml` and `qml/QueuePanel.qml` the folder-mode side panels, and
+  in/out handles, `qml/FileSidebar.qml` the folder-mode file list, `qml/QueuePanel.qml` the export queue with its
+  file names and save folder, and
   `qml/SettingsDialog.qml` the Settings window. `qml/Theme.qml` holds the colours and
   `qml/Icons.qml` the icon shapes.
 - `packaging/` has the icon, the Linux menu entry and the Windows installer script;

@@ -1,18 +1,49 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
 import QtQuick.Layouts
 import MxCut
 
-// Folder mode's right panel: the export queue and its controls.
+// The right panel: the export queue, what each queued video is saved as and
+// where, and the controls that run it.
 Rectangle {
     id: root
 
     required property ExportQueue queue
+    required property Settings settings
     required property var formatTime
+
+    readonly property bool replacing: settings.replaceOriginal
+
+    function localPath(url) {
+        const s = url.toString()
+        if (!s.startsWith("file://"))
+            return s
+        // file:///C:/x -> C:/x on Windows, file:///home/x -> /home/x elsewhere.
+        const path = decodeURIComponent(s.substring(7))
+        return /^\/[A-Za-z]:/.test(path) ? path.substring(1) : path
+    }
 
     signal jobActivated(url source)
 
     color: Theme.surface
+
+    FolderDialog {
+        id: saveFolderDialog
+        title: "Save trimmed videos to"
+        currentFolder: root.settings.outputFolder
+        onAccepted: {
+            root.settings.outputFolder = selectedFolder
+            root.settings.saveBesideSource = false
+        }
+    }
+
+    component SectionLabel: Text {
+        color: Theme.textFaint
+        font.pixelSize: 10
+        font.weight: Font.DemiBold
+        font.letterSpacing: 0.8
+    }
 
     Rectangle {
         width: 1
@@ -194,8 +225,201 @@ Rectangle {
             }
         }
 
+
         Rectangle {
             Layout.fillWidth: true
+            implicitHeight: 1
+            color: Theme.border
+        }
+
+        // One name per queued video. Left empty, a field shows what the
+        // filename pattern in Settings will call it.
+        SectionLabel {
+            Layout.leftMargin: 14
+            Layout.topMargin: 12
+            text: "FILE NAMES"
+            opacity: root.replacing ? 0.5 : 1
+        }
+
+        ListView {
+            id: names
+            Layout.fillWidth: true
+            Layout.topMargin: 6
+            Layout.preferredHeight: count === 0 ? 0 : Math.min(contentHeight, 4 * 52)
+            clip: true
+            spacing: 4
+            interactive: contentHeight > height
+            model: root.queue
+            enabled: !root.replacing
+            opacity: root.replacing ? 0.5 : 1
+            ScrollBar.vertical: ScrollBar {}
+
+            delegate: ColumnLayout {
+                id: nameRow
+                required property int index
+                required property string name
+                required property string outputName
+                required property string defaultName
+                required property string extension
+                required property string output
+                required property int jobState
+
+                readonly property bool editable: jobState !== TrimJob.Running && jobState !== TrimJob.Finished
+
+                // A finished trim shows the name it was saved as.
+                function shownName() {
+                    if (jobState === TrimJob.Finished && output !== "")
+                        return output.substring(Math.max(output.lastIndexOf("/"), output.lastIndexOf("\\")) + 1)
+                                     .replace(/\.[^.]*$/, "")
+                    return outputName
+                }
+                function refresh() {
+                    if (!nameField.activeFocus)
+                        nameField.text = shownName()
+                }
+                function commit() {
+                    const typed = nameField.text.trim()
+                    root.queue.setOutputName(index, typed === defaultName ? "" : typed)
+                    refresh()
+                }
+
+                x: 14
+                width: ListView.view.width - 28
+                spacing: 2
+
+                Component.onCompleted: refresh()
+                onOutputNameChanged: refresh()
+                onOutputChanged: refresh()
+                onJobStateChanged: refresh()
+
+                Text {
+                    Layout.fillWidth: true
+                    text: nameRow.name
+                    color: Theme.textFaint
+                    font.pixelSize: 10
+                    elide: Text.ElideMiddle
+                }
+                Rectangle {
+                    Layout.fillWidth: true
+                    implicitHeight: 28
+                    radius: Theme.radius
+                    color: Theme.background
+                    border.color: nameField.activeFocus ? Theme.accent : Theme.border
+                    opacity: nameRow.editable ? 1 : 0.6
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 8
+                        anchors.rightMargin: 8
+                        spacing: 0
+
+                        TextInput {
+                            id: nameField
+                            Layout.fillWidth: true
+                            clip: true
+                            color: Theme.text
+                            selectionColor: Theme.accent
+                            selectedTextColor: "white"
+                            font.pixelSize: 12
+                            readOnly: !nameRow.editable
+                            selectByMouse: true
+                            // Start from the default, so renaming is an edit, not a retype.
+                            onActiveFocusChanged: {
+                                if (activeFocus && text === "" && nameRow.editable) {
+                                    text = nameRow.defaultName
+                                    selectAll()
+                                } else if (!activeFocus && nameRow.editable) {
+                                    nameRow.commit()
+                                }
+                            }
+                            onAccepted: focus = false
+                            Keys.onEscapePressed: { text = nameRow.outputName; focus = false; nameRow.refresh() }
+
+                            Text {
+                                anchors.fill: parent
+                                verticalAlignment: Text.AlignVCenter
+                                visible: nameField.text === "" && !nameField.activeFocus
+                                text: nameRow.defaultName
+                                color: Theme.textDim
+                                font: nameField.font
+                                elide: Text.ElideMiddle
+                            }
+                        }
+                        Text {
+                            text: "." + nameRow.extension
+                            color: Theme.textFaint
+                            font.pixelSize: 12
+                        }
+                    }
+                }
+            }
+        }
+
+        Text {
+            Layout.fillWidth: true
+            Layout.leftMargin: 14
+            Layout.rightMargin: 14
+            Layout.topMargin: 2
+            visible: names.count === 0 || root.replacing
+            wrapMode: Text.WordWrap
+            text: root.replacing ? "Each trim replaces its original, keeping its name. Change this in Settings."
+                                 : "Queued videos can be renamed here."
+            color: Theme.textFaint
+            font.pixelSize: 11
+        }
+
+        SectionLabel {
+            Layout.leftMargin: 14
+            Layout.topMargin: 12
+            text: "SAVE TO"
+            opacity: root.replacing ? 0.5 : 1
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.leftMargin: 14
+            Layout.rightMargin: 10
+            Layout.topMargin: 4
+            spacing: 6
+            enabled: !root.replacing
+            opacity: root.replacing ? 0.5 : 1
+
+            Icon {
+                path: Icons.folder
+                size: 16
+                color: Theme.textDim
+            }
+            Text {
+                Layout.fillWidth: true
+                elide: Text.ElideMiddle
+                text: root.settings.saveBesideSource || root.settings.outputFolder.toString() === ""
+                      ? "Next to each original"
+                      : root.localPath(root.settings.outputFolder)
+                color: Theme.text
+                font.pixelSize: 12
+                ToolTip.visible: saveToHover.hovered && !root.settings.saveBesideSource
+                ToolTip.text: root.localPath(root.settings.outputFolder)
+                HoverHandler { id: saveToHover }
+            }
+            IconButton {
+                text: "Change…"
+                implicitHeight: 28
+                tip: "Choose a folder for every trimmed video"
+                onClicked: saveFolderDialog.open()
+            }
+        }
+        IconButton {
+            Layout.leftMargin: 8
+            implicitHeight: 26
+            visible: !root.settings.saveBesideSource && !root.replacing
+            text: "Save next to each original instead"
+            tint: Theme.textDim
+            onClicked: root.settings.saveBesideSource = true
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.topMargin: 12
             implicitHeight: 1
             color: Theme.border
         }
