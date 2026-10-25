@@ -12,7 +12,7 @@ ApplicationWindow {
     property real inPoint: 0
     property real outPoint: 0
     property int trimMode: TrimJob.Fast
-    // Folder mode adds the file sidebar and the export queue.
+    // Folder mode adds the file sidebar; the export queue is always there.
     property bool folderMode: false
     // The parts of the video to keep, as {inPoint, outPoint}; there is always
     // at least one. inPoint and outPoint are the active one's, which the keys,
@@ -166,11 +166,11 @@ ApplicationWindow {
     }
 
     function addToQueue() {
-        if (!folderMode || !player.loaded)
+        if (!player.loaded)
             return
         rememberCut()
         exportQueue.add(player.source, inPoint, outPoint, trimMode, jobSegments())
-        if (autoAdvance.checked)
+        if (folderMode && autoAdvance.checked)
             stepVideo(1)
     }
 
@@ -278,7 +278,7 @@ ApplicationWindow {
     Shortcut { sequence: "Shift+Right"; onActivated: window.nudge(5) }
     Shortcut { sequence: "["; onActivated: player.seek(window.inPoint, true) }
     Shortcut { sequence: "]"; onActivated: player.seek(window.outPoint, true) }
-    Shortcut { sequence: "Q"; enabled: window.folderMode; onActivated: window.addToQueue() }
+    Shortcut { sequence: "Q"; onActivated: window.addToQueue() }
     Shortcut { sequence: "S"; onActivated: window.addSegment() }
     Shortcut { sequence: "Up"; enabled: window.folderMode; onActivated: window.stepVideo(-1) }
     Shortcut { sequence: "Down"; enabled: window.folderMode; onActivated: window.stepVideo(1) }
@@ -341,7 +341,7 @@ ApplicationWindow {
                 tip: "Space  play / pause\n" + appSettings.inKey + " / " + appSettings.outKey + "  set in / out\n"
                      + "← / →  previous / next frame\n"
                      + "Shift + ← / →  jump 5 seconds\n[ / ]  go to in / out\n"
-                     + "S  add a segment\nQ  add to queue (folder)\n↑ / ↓  previous / next video (folder)\nCtrl + ,  settings"
+                     + "S  add a segment\nQ  add to queue\n↑ / ↓  previous / next video (folder)\nCtrl + ,  settings"
             }
             IconButton {
                 iconPath: Icons.settings
@@ -773,7 +773,7 @@ ApplicationWindow {
                         onClicked: window.trimNow()
                     }
 
-                    // Folder mode: queue this video's cut and move on.
+                    // Queue this video's cut and, in folder mode, move on.
                     CheckBox {
                         id: autoAdvance
                         visible: window.folderMode
@@ -784,8 +784,7 @@ ApplicationWindow {
                         ToolTip.text: "Go to the next video after adding this one"
                     }
                     IconButton {
-                        visible: window.folderMode
-                        primary: true
+                        primary: window.folderMode
                         iconPath: Icons.queueAdd
                         implicitHeight: 36
                         tip: "Q"
@@ -802,8 +801,8 @@ ApplicationWindow {
         QueuePanel {
             Layout.preferredWidth: 300
             Layout.fillHeight: true
-            visible: window.folderMode
             queue: exportQueue
+            settings: appSettings
             formatTime: window.timecode
             onJobActivated: (source) => window.selectVideo(source)
         }

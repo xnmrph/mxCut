@@ -35,7 +35,12 @@ which one A and D change, and click **×** to remove it. When you click
    listed on the left.
 2. For each video you want, mark the cut and press **Add to queue** (**Q**).
    mxCut moves on to the next video.
-3. Click **Start trimming**. Each video is saved as its own file.
+3. Under the queue, rename any video's output if you like, and use
+   **Change…** under **Save to** to pick the folder they go in.
+4. Click **Start trimming**. Each video is saved as its own file.
+
+The export queue is there for a single video too: press **Add to queue** to
+rename it before trimming.
 
 ### Fast or Accurate
 
@@ -54,7 +59,7 @@ which one A and D change, and click **×** to remove it. When you click
 | Shift + ← / → | 5 seconds back / forward |
 | [ / ] | Jump to the start / end of the cut |
 | S | Add another part |
-| Q | Add to queue (folder) |
+| Q | Add to queue |
 | ↑ / ↓ | Previous / next video (folder) |
 | Ctrl + O | Open a video |
 | Ctrl + Shift + O | Open a folder |

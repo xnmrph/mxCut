@@ -54,6 +54,12 @@ QVariant ExportQueue::data(const QModelIndex &index, int role) const
         return qMax<qsizetype>(1, job->segments().size());
     case KeptDurationRole:
         return job->keptDuration();
+    case OutputNameRole:
+        return job->outputName();
+    case DefaultNameRole:
+        return defaultName(job);
+    case ExtensionRole:
+        return QFileInfo(TrimJob::outputPathFor(job->source().toLocalFile(), job->mode(), {})).suffix();
     }
     return {};
 }
@@ -74,6 +80,9 @@ QHash<int, QByteArray> ExportQueue::roleNames() const
         {ErrorDetailsRole, "errorDetails"},
         {SegmentCountRole, "segmentCount"},
         {KeptDurationRole, "keptDuration"},
+        {OutputNameRole, "outputName"},
+        {DefaultNameRole, "defaultName"},
+        {ExtensionRole, "extension"},
     };
 }
 
@@ -92,7 +101,13 @@ void ExportQueue::setSettings(Settings *settings)
 {
     if (settings == m_settings)
         return;
+    if (m_settings)
+        m_settings->disconnect(this);
     m_settings = settings;
+    // The default names follow the filename pattern as it is changed.
+    if (m_settings)
+        connect(m_settings, &Settings::changed, this, &ExportQueue::refreshDefaultNames);
+    refreshDefaultNames();
     emit settingsChanged();
 }
 
@@ -122,7 +137,8 @@ void ExportQueue::add(const QUrl &source, double inPoint, double outPoint, int m
 
     if (reuse) {
         onJobChanged(job, {InPointRole, OutPointRole, ModeRole, StateRole, ProgressRole, OutputRole, ErrorRole,
-                           ErrorDetailsRole, SegmentCountRole, KeptDurationRole});
+                           ErrorDetailsRole, SegmentCountRole, KeptDurationRole, DefaultNameRole,
+                           ExtensionRole});
     } else {
         beginInsertRows({}, int(m_jobs.size()), int(m_jobs.size()));
         m_jobs.append(job);
@@ -155,6 +171,17 @@ void ExportQueue::remove(int row)
     emit sourceChanged(source);
     if (m_running)
         scheduleNext();
+}
+
+void ExportQueue::setOutputName(int row, const QString &name)
+{
+    if (row < 0 || row >= m_jobs.size())
+        return;
+    TrimJob *job = m_jobs.at(row);
+    if (job->state() == TrimJob::Running || job->outputName() == name)
+        return;
+    job->setOutputName(name);
+    onJobChanged(job, {OutputNameRole});
 }
 
 void ExportQueue::clearFinished()
@@ -198,6 +225,23 @@ int ExportQueue::countIn(TrimJob::State state) const
 {
     return int(std::count_if(m_jobs.cbegin(), m_jobs.cend(),
                              [state](const TrimJob *job) { return job->state() == state; }));
+}
+
+QString ExportQueue::defaultName(const TrimJob *job) const
+{
+    TrimOptions options = m_settings ? m_settings->trimOptions() : TrimOptions{};
+    options.replaceOriginal = false;
+    options.overwrite = true;
+    options.outputFolder = QStringLiteral("/nonexistent-preview-folder");
+    const QString path = TrimJob::outputPathFor(job->source().toLocalFile(), job->mode(), options,
+                                                job->inPoint(), job->outPoint());
+    return QFileInfo(path).completeBaseName();
+}
+
+void ExportQueue::refreshDefaultNames()
+{
+    if (!m_jobs.isEmpty())
+        emit dataChanged(index(0), index(int(m_jobs.size()) - 1), {DefaultNameRole});
 }
 
 int ExportQueue::rowOf(const TrimJob *job) const

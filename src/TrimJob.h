@@ -34,6 +34,9 @@ class TrimJob : public QObject
 
     Q_PROPERTY(QUrl source READ source WRITE setSource NOTIFY sourceChanged)
     Q_PROPERTY(QString output READ output WRITE setOutput NOTIFY outputChanged)
+    // A file name of the user's own, without the folder or extension, used
+    // in place of the filename pattern. Empty: use the pattern.
+    Q_PROPERTY(QString outputName READ outputName WRITE setOutputName NOTIFY outputNameChanged)
     Q_PROPERTY(double inPoint READ inPoint WRITE setInPoint NOTIFY inPointChanged)
     Q_PROPERTY(double outPoint READ outPoint WRITE setOutPoint NOTIFY outPointChanged)
     // Parts of the video to keep, as {inPoint, outPoint} objects. With two or
@@ -65,6 +68,8 @@ public:
     void setSource(const QUrl &source);
     QString output() const { return m_output; }
     void setOutput(const QString &output);
+    QString outputName() const { return m_outputName; }
+    void setOutputName(const QString &name);
     double inPoint() const { return m_inPoint; }
     void setInPoint(double seconds);
     double outPoint() const { return m_outPoint; }
@@ -114,6 +119,7 @@ public:
 signals:
     void sourceChanged();
     void outputChanged();
+    void outputNameChanged();
     void inPointChanged();
     void outPointChanged();
     void segmentsChanged();
@@ -150,6 +156,7 @@ private:
 
     QUrl m_source;
     QString m_output;
+    QString m_outputName;
     double m_inPoint = 0;
     double m_outPoint = 0;
     QList<Range> m_segments;

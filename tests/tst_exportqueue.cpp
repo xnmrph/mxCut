@@ -24,6 +24,7 @@ private slots:
     void removeAndClearFinished();
     void usesSettingsWhenJobsStart();
     void queuesSegments();
+    void namesEachOutput();
 
 private:
     QUrl clip(int n) const { return QUrl::fromLocalFile(m_clips.at(n)); }
@@ -232,6 +233,38 @@ void TestExportQueue::queuesSegments()
     QVERIFY(waitForAll(queue));
     QCOMPARE(queue.finishedCount(), 1);
     QFile::remove(queue.data(row, ExportQueue::OutputRole).toString());
+}
+
+void TestExportQueue::namesEachOutput()
+{
+    ExportQueue queue;
+    queue.add(clip(0), 1.0, 2.0, TrimJob::Fast);
+    queue.add(clip(1), 1.0, 2.0, TrimJob::Fast);
+    const QModelIndex first = queue.index(0);
+    const QModelIndex second = queue.index(1);
+    QCOMPARE(queue.data(first, ExportQueue::DefaultNameRole).toString(), QStringLiteral("clip0_trim"));
+    QCOMPARE(queue.data(first, ExportQueue::ExtensionRole).toString(), QStringLiteral("mp4"));
+
+    QSignalSpy changed(&queue, &QAbstractItemModel::dataChanged);
+    // A typed extension is not doubled.
+    queue.setOutputName(0, QStringLiteral("beach day.mp4"));
+    QCOMPARE(changed.count(), 1);
+    QCOMPARE(queue.data(first, ExportQueue::OutputNameRole).toString(), QStringLiteral("beach day.mp4"));
+
+    // Queuing the video again keeps its name.
+    queue.add(clip(0), 1.5, 2.5, TrimJob::Fast);
+    QCOMPARE(queue.data(first, ExportQueue::OutputNameRole).toString(), QStringLiteral("beach day.mp4"));
+
+    queue.start();
+    QVERIFY(waitForAll(queue));
+    QCOMPARE(queue.finishedCount(), 2);
+    const QString named = queue.data(first, ExportQueue::OutputRole).toString();
+    const QString patterned = queue.data(second, ExportQueue::OutputRole).toString();
+    QCOMPARE(QFileInfo(named).fileName(), QStringLiteral("beach day.mp4"));
+    QCOMPARE(QFileInfo(patterned).fileName(), QStringLiteral("clip1_trim.mp4"));
+    QVERIFY(QFileInfo::exists(named));
+    QFile::remove(named);
+    QFile::remove(patterned);
 }
 
 QTEST_GUILESS_MAIN(TestExportQueue)

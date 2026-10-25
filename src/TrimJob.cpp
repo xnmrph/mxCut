@@ -123,6 +123,14 @@ void TrimJob::setOutput(const QString &output)
     emit outputChanged();
 }
 
+void TrimJob::setOutputName(const QString &name)
+{
+    if (name == m_outputName)
+        return;
+    m_outputName = name;
+    emit outputNameChanged();
+}
+
 void TrimJob::setInPoint(double seconds)
 {
     if (qFuzzyCompare(seconds, m_inPoint))
@@ -443,8 +451,17 @@ void TrimJob::start()
     if (m_mode == Accurate && !Encoders::find(m_options.videoEncoder))
         return fail(tr("Unknown encoder \"%1\". Choose another one in Settings.").arg(m_options.videoEncoder));
 
-    if (m_output.isEmpty())
-        setOutput(outputPathFor(input, m_mode, m_options, m_inPoint, m_outPoint));
+    if (m_output.isEmpty()) {
+        TrimOptions options = m_options;
+        QString name = m_outputName.trimmed();
+        // Someone typing "clip.mp4" means clip.mp4, not clip.mp4.mp4.
+        const QString extension = QLatin1Char('.') + outputSuffix(input, m_mode);
+        if (name.endsWith(extension, Qt::CaseInsensitive))
+            name.chop(extension.size());
+        if (!name.isEmpty())
+            options.filenamePattern = name;
+        setOutput(outputPathFor(input, m_mode, options, m_inPoint, m_outPoint));
+    }
     const QFileInfo outputInfo(m_output);
     if (sameFile(m_output, input))
         return fail(tr("The trimmed file would replace the original. Change the filename pattern in Settings."));

@@ -9,7 +9,7 @@
 #include <QUrl>
 #include <QtQml/qqmlregistration.h>
 
-// The folder-mode export queue: one TrimJob per queued video, run a few at a
+// The export queue: one TrimJob per queued video, run a few at a
 // time, each writing its own output file.
 class ExportQueue : public QAbstractListModel
 {
@@ -40,6 +40,9 @@ public:
         ErrorDetailsRole,
         SegmentCountRole,
         KeptDurationRole,
+        OutputNameRole,
+        DefaultNameRole,
+        ExtensionRole,
     };
 
     explicit ExportQueue(QObject *parent = nullptr);
@@ -65,6 +68,9 @@ public:
     Q_INVOKABLE void add(const QUrl &source, double inPoint, double outPoint, int mode,
                          const QVariantList &segments = {});
     Q_INVOKABLE void remove(int row);
+    // Names a job's output file; see TrimJob::outputName. Empty goes back to
+    // the filename pattern.
+    Q_INVOKABLE void setOutputName(int row, const QString &name);
     Q_INVOKABLE void clearFinished();
     Q_INVOKABLE void start();
     Q_INVOKABLE void cancel();
@@ -87,6 +93,10 @@ signals:
 
 private:
     int countIn(TrimJob::State state) const;
+    // What the filename pattern names a job's output, without the folder,
+    // the _2 for a taken name, or the extension.
+    QString defaultName(const TrimJob *job) const;
+    void refreshDefaultNames();
     int rowOf(const TrimJob *job) const;
     void onJobChanged(TrimJob *job, const QList<int> &roles);
     void scheduleNext();
