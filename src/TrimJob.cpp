@@ -16,10 +16,10 @@
 namespace {
 
 constexpr qsizetype kStderrTailBytes = 4096;
-// While replacing, how often and how long to wait for the original to be let
-// go of (Windows can't delete a file another program has open).
-constexpr int kReplaceRetryMs = 250;
-constexpr int kReplaceTries = 16;
+// While deleting the original, how often and how long to wait for it to be
+// let go of (Windows can't delete a file another program has open).
+constexpr int kDeleteRetryMs = 250;
+constexpr int kDeleteTries = 16;
 
 QString seconds(double value)
 {
@@ -89,6 +89,25 @@ bool hasAudio(const QString &ffmpeg, const QString &input)
     }
     static const QRegularExpression audio(QStringLiteral("Stream #\\d+:\\d+.*: Audio:"));
     return audio.match(QString::fromUtf8(p.readAllStandardError())).hasMatch();
+}
+
+// Whether FFmpeg can open the file and finds a video stream with a length in
+// it: checked before the original is deleted.
+bool isPlayableVideo(const QString &ffmpeg, const QString &path)
+{
+    if (QFileInfo(path).size() <= 0)
+        return false;
+    QProcess p;
+    p.start(ffmpeg, {QStringLiteral("-hide_banner"), QStringLiteral("-nostdin"), QStringLiteral("-i"), path});
+    if (!p.waitForFinished(15000)) {
+        p.kill();
+        p.waitForFinished(2000);
+        return false;
+    }
+    const QString out = QString::fromUtf8(p.readAllStandardError());
+    static const QRegularExpression video(QStringLiteral("Stream #\\d+:\\d+.*: Video:"));
+    static const QRegularExpression duration(QStringLiteral("Duration: \\d+:\\d+:\\d+"));
+    return video.match(out).hasMatch() && duration.match(out).hasMatch();
 }
 
 } // namespace
@@ -226,14 +245,6 @@ QString TrimJob::outputPathFor(const QString &input, Mode mode, const TrimOption
                                double inPoint, double outPoint)
 {
     const QFileInfo info(input);
-    if (options.replaceOriginal) {
-        const QString suffix = outputSuffix(input, mode);
-        const QString base = info.completeBaseName() + QStringLiteral(".mxcut-part");
-        QString candidate = info.dir().filePath(base + QLatin1Char('.') + suffix);
-        for (int n = 2; QFileInfo::exists(candidate); ++n)
-            candidate = info.dir().filePath(QStringLiteral("%1%2.%3").arg(base).arg(n).arg(suffix));
-        return candidate;
-    }
     const QString dir = options.outputFolder.isEmpty() ? info.absolutePath() : options.outputFolder;
     const QDateTime now = QDateTime::currentDateTime();
 
@@ -253,9 +264,12 @@ QString TrimJob::outputPathFor(const QString &input, Mode mode, const TrimOption
 
     const QString suffix = outputSuffix(input, mode);
     QString candidate = QDir(dir).filePath(base + QLatin1Char('.') + suffix);
-    // Never write over the source, even when overwriting is allowed.
+    // Never write over the source, even when overwriting is allowed, unless
+    // it is being deleted: then the trim can have its name once it's gone.
     const auto taken = [&](const QString &path) {
-        return sameFile(path, input) || (!options.overwrite && QFileInfo::exists(path));
+        if (sameFile(path, input))
+            return !options.deleteOriginal;
+        return !options.overwrite && QFileInfo::exists(path);
     };
     for (int n = 2; taken(candidate); ++n)
         candidate = QDir(dir).filePath(QStringLiteral("%1_%2.%3").arg(base).arg(n).arg(suffix));
@@ -462,9 +476,20 @@ void TrimJob::start()
             options.filenamePattern = name;
         setOutput(outputPathFor(input, m_mode, options, m_inPoint, m_outPoint));
     }
+    m_finalOutput.clear();
+    if (sameFile(m_output, input)) {
+        if (!m_options.deleteOriginal)
+            return fail(tr("The trimmed file would replace the original. Change the filename pattern in Settings."));
+        // Written beside the original first, and renamed once it's gone.
+        const QFileInfo info(m_output);
+        const QString base = info.completeBaseName() + QStringLiteral(".mxcut-part");
+        QString temporary = info.dir().filePath(base + QLatin1Char('.') + info.suffix());
+        for (int n = 2; QFileInfo::exists(temporary); ++n)
+            temporary = info.dir().filePath(QStringLiteral("%1%2.%3").arg(base).arg(n).arg(info.suffix()));
+        m_finalOutput = m_output;
+        setOutput(temporary);
+    }
     const QFileInfo outputInfo(m_output);
-    if (sameFile(m_output, input))
-        return fail(tr("The trimmed file would replace the original. Change the filename pattern in Settings."));
     if (!QDir().mkpath(outputInfo.absolutePath()))
         return fail(tr("The output folder %1 can't be created.").arg(QDir::toNativeSeparators(outputInfo.absolutePath())));
     if (!QFileInfo(outputInfo.absolutePath()).isWritable())
@@ -597,11 +622,15 @@ void TrimJob::onProcessFinished(int exitCode, QProcess::ExitStatus status)
 
     if (status == QProcess::NormalExit && exitCode == 0) {
         setProgress(1);
-        if (m_options.replaceOriginal) {
-            m_replaceTries = 0;
-            emit aboutToReplace(m_source);
+        if (m_options.deleteOriginal) {
+            if (!isPlayableVideo(m_ffmpeg, m_output)) {
+                keepOriginal(tr("The trimmed video couldn't be checked, so the original was kept."));
+                return;
+            }
+            m_deleteTries = 0;
+            emit aboutToDeleteOriginal(m_source);
             // Give whoever had the original open a moment to close it.
-            QTimer::singleShot(kReplaceRetryMs, this, &TrimJob::replaceOriginal);
+            QTimer::singleShot(kDeleteRetryMs, this, &TrimJob::deleteOriginal);
             return;
         }
         setState(Finished);
@@ -652,51 +681,49 @@ void TrimJob::fail(const QString &error)
     emit finished();
 }
 
-void TrimJob::replaceOriginal()
+void TrimJob::deleteOriginal()
 {
     const QString input = m_source.toLocalFile();
-    const QFileInfo info(input);
-    const QString target = info.dir().filePath(info.completeBaseName() + QLatin1Char('.')
-                                               + QFileInfo(m_output).suffix());
-    // Accurate mode can change the type (holiday.mov -> holiday.mp4); never
-    // put the trim over some other file that already has that name.
-    if (!sameFile(target, input) && QFileInfo::exists(target))
-        return keepTrimmedCopy(tr("%1 already exists, so the original was kept.")
-                                   .arg(QFileInfo(target).fileName()));
-
     if (QFileInfo::exists(input) && !QFile::moveToTrash(input) && !QFile::remove(input)) {
-        if (++m_replaceTries < kReplaceTries) {
-            QTimer::singleShot(kReplaceRetryMs, this, &TrimJob::replaceOriginal);
+        if (++m_deleteTries < kDeleteTries) {
+            QTimer::singleShot(kDeleteRetryMs, this, &TrimJob::deleteOriginal);
             return;
         }
-        return keepTrimmedCopy(tr("The original couldn't be removed; another program may have it open."));
+        return keepOriginal(tr("The original couldn't be deleted; another program may have it open."));
     }
-    if (!QFile::rename(m_output, target)) {
-        setErrorString(tr("The original was moved to the trash, but the trimmed video couldn't be renamed. "
-                          "It was saved as %1.").arg(QFileInfo(m_output).fileName()));
-        setState(Failed);
-        emit replaceFinished(m_source, QUrl::fromLocalFile(m_output), true);
-        emit finished();
-        return;
+    if (!m_finalOutput.isEmpty()) {
+        if (!QFile::rename(m_output, m_finalOutput)) {
+            setErrorString(tr("The original was moved to the trash, but the trimmed video couldn't be renamed. "
+                              "It was saved as %1.").arg(QFileInfo(m_output).fileName()));
+            setState(Failed);
+            emit deleteOriginalFinished(m_source, QUrl::fromLocalFile(m_output), true);
+            emit finished();
+            return;
+        }
+        setOutput(m_finalOutput);
+        m_finalOutput.clear();
     }
-    setOutput(target);
     setState(Finished);
-    emit replaceFinished(m_source, QUrl::fromLocalFile(target), true);
+    emit deleteOriginalFinished(m_source, QUrl::fromLocalFile(m_output), true);
     emit finished();
 }
 
-// Replacing failed: keep the original, and give the trim an ordinary name.
-void TrimJob::keepTrimmedCopy(const QString &error)
+// The original couldn't be deleted: keep it, and give a trim that was meant
+// to take its name an ordinary one.
+void TrimJob::keepOriginal(const QString &error)
 {
-    TrimOptions options = m_options;
-    options.replaceOriginal = false;
-    options.outputFolder.clear();
-    const QString copy = outputPathFor(m_source.toLocalFile(), m_mode, options, m_inPoint, m_outPoint);
-    if (QFile::rename(m_output, copy))
-        setOutput(copy);
+    if (!m_finalOutput.isEmpty()) {
+        const QFileInfo info(m_finalOutput);
+        QString copy;
+        for (int n = 2; copy.isEmpty() || QFileInfo::exists(copy); ++n)
+            copy = info.dir().filePath(QStringLiteral("%1_%2.%3").arg(info.completeBaseName()).arg(n).arg(info.suffix()));
+        if (QFile::rename(m_output, copy))
+            setOutput(copy);
+        m_finalOutput.clear();
+    }
     setErrorString(error + QLatin1Char(' ')
                    + tr("The trimmed video was saved as %1.").arg(QFileInfo(m_output).fileName()));
     setState(Failed);
-    emit replaceFinished(m_source, m_source, false);
+    emit deleteOriginalFinished(m_source, m_source, false);
     emit finished();
 }

@@ -88,8 +88,8 @@ ApplicationWindow {
             player.source = folderModel.urlAt(next)
     }
 
-    // A trim is about to take the place of this video, so close it if it is
-    // showing; reopenFile shows whatever is there afterwards.
+    // This video is about to be deleted after its trim, so close it if it is
+    // showing; reopenFile shows the trim, or the original if it was kept.
     property url releasedSource
     function releaseFile(source) {
         if (String(player.source) !== String(source))
@@ -97,10 +97,10 @@ ApplicationWindow {
         releasedSource = source
         player.source = ""
     }
-    // Videos whose file was replaced by a trim, so their old cut no longer fits.
+    // Trims whose original was deleted, so the original's cut doesn't fit them.
     property var replacedFiles: ({})
-    function reopenFile(source, current, replaced) {
-        if (replaced) {
+    function reopenFile(source, current, deleted) {
+        if (deleted) {
             delete cuts[String(source)]
             replacedFiles[String(current)] = true
         }
@@ -240,16 +240,16 @@ ApplicationWindow {
 
     TrimJob {
         id: job
-        onAboutToReplace: (source) => window.releaseFile(source)
-        onReplaceFinished: (source, current, replaced) => window.reopenFile(source, current, replaced)
+        onAboutToDeleteOriginal: (source) => window.releaseFile(source)
+        onDeleteOriginalFinished: (source, current, deleted) => window.reopenFile(source, current, deleted)
     }
 
     ExportQueue {
         id: exportQueue
         settings: appSettings
         maxConcurrent: appSettings.maxConcurrent
-        onAboutToReplace: (source) => window.releaseFile(source)
-        onReplaceFinished: (source, current, replaced) => window.reopenFile(source, current, replaced)
+        onAboutToDeleteOriginal: (source) => window.releaseFile(source)
+        onDeleteOriginalFinished: (source, current, deleted) => window.reopenFile(source, current, deleted)
     }
 
     MediaPreview {

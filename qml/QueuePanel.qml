@@ -13,8 +13,6 @@ Rectangle {
     required property Settings settings
     required property var formatTime
 
-    readonly property bool replacing: settings.replaceOriginal
-
     function localPath(url) {
         const s = url.toString()
         if (!s.startsWith("file://"))
@@ -238,7 +236,6 @@ Rectangle {
             Layout.leftMargin: 14
             Layout.topMargin: 12
             text: "FILE NAMES"
-            opacity: root.replacing ? 0.5 : 1
         }
 
         ListView {
@@ -250,8 +247,6 @@ Rectangle {
             spacing: 4
             interactive: contentHeight > height
             model: root.queue
-            enabled: !root.replacing
-            opacity: root.replacing ? 0.5 : 1
             ScrollBar.vertical: ScrollBar {}
 
             delegate: ColumnLayout {
@@ -360,10 +355,9 @@ Rectangle {
             Layout.leftMargin: 14
             Layout.rightMargin: 14
             Layout.topMargin: 2
-            visible: names.count === 0 || root.replacing
+            visible: names.count === 0
             wrapMode: Text.WordWrap
-            text: root.replacing ? "Each trim replaces its original, keeping its name. Change this in Settings."
-                                 : "Queued videos can be renamed here."
+            text: "Queued videos can be renamed here."
             color: Theme.textFaint
             font.pixelSize: 11
         }
@@ -372,7 +366,6 @@ Rectangle {
             Layout.leftMargin: 14
             Layout.topMargin: 12
             text: "SAVE TO"
-            opacity: root.replacing ? 0.5 : 1
         }
 
         RowLayout {
@@ -381,8 +374,6 @@ Rectangle {
             Layout.rightMargin: 10
             Layout.topMargin: 4
             spacing: 6
-            enabled: !root.replacing
-            opacity: root.replacing ? 0.5 : 1
 
             Icon {
                 path: Icons.folder
@@ -411,10 +402,21 @@ Rectangle {
         IconButton {
             Layout.leftMargin: 8
             implicitHeight: 26
-            visible: !root.settings.saveBesideSource && !root.replacing
+            visible: !root.settings.saveBesideSource
             text: "Save next to each original instead"
             tint: Theme.textDim
             onClicked: root.settings.saveBesideSource = true
+        }
+        Text {
+            Layout.fillWidth: true
+            Layout.leftMargin: 14
+            Layout.rightMargin: 14
+            Layout.topMargin: 4
+            visible: root.settings.deleteOriginal
+            wrapMode: Text.WordWrap
+            text: "Each original goes to the Trash once its trim is saved. Change this in Settings."
+            color: Theme.textFaint
+            font.pixelSize: 11
         }
 
         Rectangle {

@@ -17,7 +17,7 @@ class Settings : public QObject
     Q_PROPERTY(QUrl outputFolder READ outputFolder WRITE setOutputFolder NOTIFY changed)
     Q_PROPERTY(QString filenamePattern READ filenamePattern WRITE setFilenamePattern NOTIFY changed)
     Q_PROPERTY(bool overwrite READ overwrite WRITE setOverwrite NOTIFY changed)
-    Q_PROPERTY(bool replaceOriginal READ replaceOriginal WRITE setReplaceOriginal NOTIFY changed)
+    Q_PROPERTY(bool deleteOriginal READ deleteOriginal WRITE setDeleteOriginal NOTIFY changed)
     Q_PROPERTY(QString videoEncoder READ videoEncoder WRITE setVideoEncoder NOTIFY changed)
     Q_PROPERTY(int quality READ quality WRITE setQuality NOTIFY changed)
     Q_PROPERTY(int speed READ speed WRITE setSpeed NOTIFY changed)
@@ -39,8 +39,8 @@ public:
     void setFilenamePattern(const QString &value);
     bool overwrite() const;
     void setOverwrite(bool value);
-    bool replaceOriginal() const;
-    void setReplaceOriginal(bool value);
+    bool deleteOriginal() const;
+    void setDeleteOriginal(bool value);
     QString videoEncoder() const;
     void setVideoEncoder(const QString &value);
     int quality() const;

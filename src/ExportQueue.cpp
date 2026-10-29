@@ -125,8 +125,8 @@ void ExportQueue::add(const QUrl &source, double inPoint, double outPoint, int m
         connect(job, &TrimJob::progressChanged, this, [this, job] { onJobChanged(job, {ProgressRole}); });
         connect(job, &TrimJob::outputChanged, this, [this, job] { onJobChanged(job, {OutputRole}); });
         connect(job, &TrimJob::finished, this, &ExportQueue::scheduleNext, Qt::QueuedConnection);
-        connect(job, &TrimJob::aboutToReplace, this, &ExportQueue::aboutToReplace);
-        connect(job, &TrimJob::replaceFinished, this, &ExportQueue::replaceFinished);
+        connect(job, &TrimJob::aboutToDeleteOriginal, this, &ExportQueue::aboutToDeleteOriginal);
+        connect(job, &TrimJob::deleteOriginalFinished, this, &ExportQueue::deleteOriginalFinished);
     }
 
     job->reset();
@@ -230,7 +230,7 @@ int ExportQueue::countIn(TrimJob::State state) const
 QString ExportQueue::defaultName(const TrimJob *job) const
 {
     TrimOptions options = m_settings ? m_settings->trimOptions() : TrimOptions{};
-    options.replaceOriginal = false;
+    options.deleteOriginal = false;
     options.overwrite = true;
     options.outputFolder = QStringLiteral("/nonexistent-preview-folder");
     const QString path = TrimJob::outputPathFor(job->source().toLocalFile(), job->mode(), options,

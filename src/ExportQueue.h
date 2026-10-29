@@ -88,8 +88,8 @@ signals:
     void sourceChanged(const QUrl &source);
     void allFinished();
     // Forwarded from the jobs; see TrimJob.
-    void aboutToReplace(const QUrl &source);
-    void replaceFinished(const QUrl &source, const QUrl &current, bool replaced);
+    void aboutToDeleteOriginal(const QUrl &source);
+    void deleteOriginalFinished(const QUrl &source, const QUrl &current, bool deleted);
 
 private:
     int countIn(TrimJob::State state) const;
