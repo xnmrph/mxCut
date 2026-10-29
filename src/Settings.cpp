@@ -44,8 +44,12 @@ void Settings::setFilenamePattern(const QString &v) { store("output/pattern", v)
 bool Settings::overwrite() const { return value("output/overwrite", defaults.overwrite).toBool(); }
 void Settings::setOverwrite(bool v) { store("output/overwrite", v); }
 
-bool Settings::replaceOriginal() const { return value("output/replaceOriginal", false).toBool(); }
-void Settings::setReplaceOriginal(bool v) { store("output/replaceOriginal", v); }
+// Was "Replace the original"; whoever turned that on keeps it on.
+bool Settings::deleteOriginal() const
+{
+    return value("output/deleteOriginal", value("output/replaceOriginal", false)).toBool();
+}
+void Settings::setDeleteOriginal(bool v) { store("output/deleteOriginal", v); }
 
 QString Settings::videoEncoder() const
 {
@@ -96,7 +100,7 @@ TrimOptions Settings::trimOptions() const
         o.outputFolder = outputFolder().toLocalFile();
     o.filenamePattern = filenamePattern();
     o.overwrite = overwrite();
-    o.replaceOriginal = replaceOriginal();
+    o.deleteOriginal = deleteOriginal();
     o.videoEncoder = videoEncoder();
     o.quality = quality();
     o.speed = speed();
@@ -108,7 +112,7 @@ TrimOptions Settings::trimOptions() const
 QString Settings::previewFileName(const QString &videoName, int mode) const
 {
     TrimOptions o = trimOptions();
-    o.replaceOriginal = false;
+    o.deleteOriginal = false;
     o.outputFolder = QStringLiteral("/nonexistent-preview-folder");
     o.overwrite = true;
     return QFileInfo(TrimJob::outputPathFor(QStringLiteral("/") + videoName, TrimJob::Mode(mode), o, 83.5, 95.25))

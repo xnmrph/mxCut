@@ -14,9 +14,10 @@ struct TrimOptions {
     QString outputFolder; // empty: beside the input
     QString filenamePattern = QStringLiteral("{name}_trim"); // see TrimJob::outputPathFor
     bool overwrite = false; // otherwise add _2, _3, ...
-    // Put the trimmed video in place of the original, which goes to the
-    // trash. Overrides the folder and pattern above.
-    bool replaceOriginal = false;
+    // Once the trimmed video is written and checked, the original goes to the
+    // trash, wherever the trim was saved. A trim may then take the original's
+    // own name.
+    bool deleteOriginal = false;
     // The rest apply to Accurate mode only.
     QString videoEncoder = QStringLiteral("libx264");
     int quality = 18;
@@ -109,8 +110,8 @@ public:
 
     // The output file for a trim. The pattern's {name}, {in}, {out}, {mode},
     // {date} and {time} are filled in and the extension is added. Unless
-    // overwriting, an existing file gets _2, _3, ... appended. When replacing
-    // the original, this is the temporary file written beside it.
+    // overwriting, an existing file gets _2, _3, ... appended. The original's
+    // own path is never used unless it is being deleted.
     static QString outputPathFor(const QString &input, Mode mode, const TrimOptions &options,
                                  double inPoint = 0, double outPoint = 0);
     // Turns FFmpeg's error output into a sentence a user can act on.
@@ -128,11 +129,11 @@ signals:
     void progressChanged();
     void errorStringChanged();
     void finished();
-    // Around putting the trimmed video in place of the original, so whoever
-    // has the original open can let go of it and then open what is there now:
-    // the trimmed video, or the original if it couldn't be replaced.
-    void aboutToReplace(const QUrl &source);
-    void replaceFinished(const QUrl &source, const QUrl &current, bool replaced);
+    // Around deleting the original, so whoever has it open can let go of it
+    // and then open what is there now: the trimmed video, or the original if
+    // it couldn't be deleted.
+    void aboutToDeleteOriginal(const QUrl &source);
+    void deleteOriginalFinished(const QUrl &source, const QUrl &current, bool deleted);
 
 private:
     void setState(State state);
@@ -151,8 +152,8 @@ private:
     void removeTemporaryFiles();
     void readProgress();
     void onProcessFinished(int exitCode, QProcess::ExitStatus status);
-    void replaceOriginal();
-    void keepTrimmedCopy(const QString &error);
+    void deleteOriginal();
+    void keepOriginal(const QString &error);
 
     QUrl m_source;
     QString m_output;
@@ -169,7 +170,10 @@ private:
     QPointer<QProcess> m_process;
     QByteArray m_stdoutBuffer;
     QByteArray m_stderrTail;
-    int m_replaceTries = 0;
+    int m_deleteTries = 0;
+    // When the trim takes the original's own name, it is written to m_output
+    // beside it and renamed to this once the original is gone.
+    QString m_finalOutput;
 
     // A trim is one or more FFmpeg runs: one per kept part plus a join in
     // Fast mode, a single run otherwise.

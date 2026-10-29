@@ -15,6 +15,7 @@ private slots:
     void outputFolderOnlyWhenChosen();
     void rejectsUnknownEncoder();
     void previewFileName();
+    void deleteOriginalKeepsOldChoice();
     void ffmpegPathOverride();
     void shortcutKeys();
 };
@@ -95,6 +96,21 @@ void TestSettings::previewFileName()
     QCOMPARE(settings.previewFileName("holiday.mov", 0), QStringLiteral("holiday [00-01-23.500].mov"));
     QCOMPARE(settings.previewFileName("holiday.mov", 1), QStringLiteral("holiday [00-01-23.500].mp4"));
     settings.setFilenamePattern("{name}_trim");
+}
+
+void TestSettings::deleteOriginalKeepsOldChoice()
+{
+    QSettings().setValue("output/replaceOriginal", true);
+    {
+        Settings settings;
+        QVERIFY(settings.deleteOriginal());
+        QVERIFY(settings.trimOptions().deleteOriginal);
+        settings.setDeleteOriginal(false);
+        QVERIFY(!settings.deleteOriginal());
+    }
+    QVERIFY(!Settings().deleteOriginal());
+    QSettings().remove("output/replaceOriginal");
+    QSettings().remove("output/deleteOriginal");
 }
 
 void TestSettings::ffmpegPathOverride()

@@ -70,8 +70,9 @@ rename it before trimming.
 Click the gear in the top right corner to change:
 
 - **Where trims are saved** and how they're named.
-- **Replace the original video**: the trimmed video takes the original's place,
-  and the original goes to the Recycle Bin or Trash.
+- **Delete the original video**: once the trim is saved and checked, the
+  original goes to the Recycle Bin or Trash, wherever the trim was saved. Name
+  trims `{name}` to have them take the original's name.
 - **Keyboard shortcuts** for setting the start and end (A and D by default).
 - **Accurate mode quality**, including faster encoding on NVIDIA, Intel or AMD
   graphics cards when yours supports it.

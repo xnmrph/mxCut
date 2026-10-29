@@ -24,8 +24,10 @@ private slots:
     void encoderOptions();
     void customOutputFolder();
     void reportsUnreadableInput();
-    void replacesOriginal();
-    void replaceKeepsOtherFiles();
+    void deletesOriginalInOtherFolder();
+    void deletedOriginalGivesItsName();
+    void deleteKeepsOtherFiles();
+    void failedTrimKeepsOriginal();
     void joinsSegments_data();
     void joinsSegments();
 
@@ -85,6 +87,9 @@ void TestTrimJob::outputPathFor()
     options.filenamePattern = QStringLiteral("{name}");
     QCOMPARE(QFileInfo(TrimJob::outputPathFor(m_clip, TrimJob::Fast, options)).fileName(),
              QStringLiteral("clip_2.mp4"));
+    // Unless the source is being deleted: then the trim can take its name.
+    options.deleteOriginal = true;
+    QCOMPARE(TrimJob::outputPathFor(m_clip, TrimJob::Fast, options), m_clip);
 
     options = {};
     QCOMPARE(QFileInfo(TrimJob::outputPathFor("/x/a.webm", TrimJob::Accurate, options)).suffix(), QStringLiteral("mp4"));
@@ -230,36 +235,60 @@ void TestTrimJob::reportsUnreadableInput()
     QVERIFY(!job.errorDetails().isEmpty());
 }
 
-void TestTrimJob::replacesOriginal()
+void TestTrimJob::deletesOriginalInOtherFolder()
+{
+    const QString video = m_dir.filePath("elsewhere.mp4");
+    QVERIFY(QFile::copy(m_clip, video));
+
+    TrimJob job;
+    TrimOptions options;
+    options.deleteOriginal = true;
+    options.outputFolder = m_dir.filePath("other");
+    job.setOptions(options);
+    job.setSource(QUrl::fromLocalFile(video));
+    job.setInPoint(2.0);
+    job.setOutPoint(6.0);
+    QSignalSpy about(&job, &TrimJob::aboutToDeleteOriginal);
+    QSignalSpy deleted(&job, &TrimJob::deleteOriginalFinished);
+    QVERIFY(runTrim(job));
+    QVERIFY2(job.state() == TrimJob::Finished, qPrintable(job.errorString()));
+    QCOMPARE(about.count(), 1);
+    QCOMPARE(deleted.count(), 1);
+    QCOMPARE(deleted.first().at(1).toUrl(), QUrl::fromLocalFile(job.output()));
+    QVERIFY(deleted.first().at(2).toBool());
+    QCOMPARE(job.output(), QDir(m_dir.filePath("other")).filePath("elsewhere_trim.mp4"));
+    QVERIFY(!QFileInfo::exists(video));
+
+    const double d = probeDuration(job.output());
+    QVERIFY2(qAbs(d - 4.0) < 0.1, qPrintable(QString::number(d)));
+}
+
+void TestTrimJob::deletedOriginalGivesItsName()
 {
     const QString video = m_dir.filePath("replace.mp4");
     QVERIFY(QFile::copy(m_clip, video));
 
     TrimJob job;
     TrimOptions options;
-    options.replaceOriginal = true;
-    options.outputFolder = m_dir.filePath("ignored");
+    options.deleteOriginal = true;
+    options.filenamePattern = "{name}";
     job.setOptions(options);
     job.setSource(QUrl::fromLocalFile(video));
     job.setInPoint(2.0);
     job.setOutPoint(6.0);
-    QSignalSpy about(&job, &TrimJob::aboutToReplace);
-    QSignalSpy replaced(&job, &TrimJob::replaceFinished);
+    QSignalSpy deleted(&job, &TrimJob::deleteOriginalFinished);
     QVERIFY(runTrim(job));
-    QCOMPARE(job.state(), TrimJob::Finished);
-    QCOMPARE(about.count(), 1);
-    QCOMPARE(replaced.count(), 1);
-    QCOMPARE(replaced.first().at(1).toUrl(), QUrl::fromLocalFile(video));
-    QCOMPARE(replaced.first().at(2).toBool(), job.state() == TrimJob::Finished);
+    QVERIFY2(job.state() == TrimJob::Finished, qPrintable(job.errorString()));
+    QCOMPARE(deleted.count(), 1);
+    QCOMPARE(deleted.first().at(1).toUrl(), QUrl::fromLocalFile(video));
     QCOMPARE(job.output(), video);
 
     const double d = probeDuration(video);
     QVERIFY2(qAbs(d - 4.0) < 0.1, qPrintable(QString::number(d)));
     QVERIFY(QDir(m_dir.path()).entryList({"*mxcut-part*"}).isEmpty());
-    QVERIFY(!QFileInfo::exists(m_dir.filePath("ignored")));
 }
 
-void TestTrimJob::replaceKeepsOtherFiles()
+void TestTrimJob::deleteKeepsOtherFiles()
 {
     // Accurate mode turns keep.mov into keep.mp4, which is already taken.
     const QString video = m_dir.filePath("keep.mov");
@@ -272,22 +301,41 @@ void TestTrimJob::replaceKeepsOtherFiles()
 
     TrimJob job;
     TrimOptions options;
-    options.replaceOriginal = true;
+    options.deleteOriginal = true;
+    options.filenamePattern = "{name}";
     job.setOptions(options);
     job.setSource(QUrl::fromLocalFile(video));
     job.setInPoint(1.0);
     job.setOutPoint(2.0);
     job.setMode(TrimJob::Accurate);
-    QSignalSpy replaced(&job, &TrimJob::replaceFinished);
+    QVERIFY(runTrim(job));
+    QVERIFY2(job.state() == TrimJob::Finished, qPrintable(job.errorString()));
+    QVERIFY(!QFileInfo::exists(video));
+    QCOMPARE(QFileInfo(other).size(), qint64(19));
+    QCOMPARE(QFileInfo(job.output()).fileName(), QStringLiteral("keep_2.mp4"));
+    QVERIFY(QFileInfo::exists(job.output()));
+}
+
+void TestTrimJob::failedTrimKeepsOriginal()
+{
+    const QString junk = m_dir.filePath("junk-kept.mp4");
+    QFile f(junk);
+    QVERIFY(f.open(QIODevice::WriteOnly));
+    f.write("this is not a video");
+    f.close();
+
+    TrimJob job;
+    TrimOptions options;
+    options.deleteOriginal = true;
+    job.setOptions(options);
+    job.setSource(QUrl::fromLocalFile(junk));
+    job.setInPoint(0.0);
+    job.setOutPoint(1.0);
+    QSignalSpy about(&job, &TrimJob::aboutToDeleteOriginal);
     QVERIFY(runTrim(job));
     QCOMPARE(job.state(), TrimJob::Failed);
-    QVERIFY2(job.errorString().contains("keep.mp4 already exists"), qPrintable(job.errorString()));
-    QCOMPARE(replaced.first().at(1).toUrl(), QUrl::fromLocalFile(video));
-    QCOMPARE(replaced.first().at(2).toBool(), job.state() == TrimJob::Finished);
-    QVERIFY(QFileInfo::exists(video));
-    QCOMPARE(QFileInfo(other).size(), qint64(19));
-    QCOMPARE(QFileInfo(job.output()).fileName(), QStringLiteral("keep_trim.mp4"));
-    QVERIFY(QFileInfo::exists(job.output()));
+    QCOMPARE(about.count(), 0);
+    QVERIFY(QFileInfo::exists(junk));
 }
 
 void TestTrimJob::joinsSegments_data()
@@ -297,7 +345,7 @@ void TestTrimJob::joinsSegments_data()
     QTest::addColumn<bool>("silent");
     QTest::newRow("fast") << int(TrimJob::Fast) << false << false;
     QTest::newRow("accurate") << int(TrimJob::Accurate) << false << false;
-    QTest::newRow("accurate, replacing") << int(TrimJob::Accurate) << true << false;
+    QTest::newRow("accurate, deleting original") << int(TrimJob::Accurate) << true << false;
     QTest::newRow("accurate, no audio") << int(TrimJob::Accurate) << false << true;
 }
 
@@ -320,7 +368,9 @@ void TestTrimJob::joinsSegments()
 
     TrimJob job;
     TrimOptions options;
-    options.replaceOriginal = replace;
+    options.deleteOriginal = replace;
+    if (replace)
+        options.filenamePattern = "{name}";
     job.setOptions(options);
     job.setSource(QUrl::fromLocalFile(video));
     job.setMode(TrimJob::Mode(mode));

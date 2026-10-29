@@ -120,25 +120,23 @@ Dialog {
                     spacing: 6
 
                     CheckBox {
-                        text: "Replace the original video"
-                        checked: root.settings.replaceOriginal
-                        onToggled: root.settings.replaceOriginal = checked
+                        text: "Delete the original video"
+                        checked: root.settings.deleteOriginal
+                        onToggled: root.settings.deleteOriginal = checked
                     }
                     Hint {
-                        visible: root.settings.replaceOriginal
-                        text: "The trimmed video takes the original's place and name, and the original goes to the "
-                              + "Trash (Recycle Bin on Windows). Accurate mode may change the type, for example "
-                              + "holiday.mov becomes holiday.mp4."
+                        visible: root.settings.deleteOriginal
+                        text: "Once the trimmed video is saved and checked, the original goes to the Trash (Recycle "
+                              + "Bin on Windows), wherever the trim is saved. If the trim fails, the original is kept. "
+                              + "Use {name} as the file name to give the trim the original's name."
                     }
 
                     RadioButton {
-                        enabled: !root.settings.replaceOriginal
                         text: "Save next to the original video"
                         checked: root.settings.saveBesideSource
                         onToggled: root.settings.saveBesideSource = true
                     }
                     RowLayout {
-                        enabled: !root.settings.replaceOriginal
                         Layout.fillWidth: true
                         RadioButton {
                             text: "Save in:"
@@ -158,9 +156,8 @@ Dialog {
                         }
                     }
 
-                    Label { text: "File name"; Layout.topMargin: 6; enabled: !root.settings.replaceOriginal }
+                    Label { text: "File name"; Layout.topMargin: 6 }
                     TextField {
-                        enabled: !root.settings.replaceOriginal
                         Layout.fillWidth: true
                         text: root.settings.filenamePattern
                         placeholderText: "{name}_trim"
@@ -175,13 +172,10 @@ Dialog {
                         elide: Text.ElideMiddle
                         text: {
                             root.settings.filenamePattern
-                            if (root.settings.replaceOriginal)
-                                return "Example: holiday.mov → holiday.mov, trimmed"
                             return "Example: holiday.mov → " + root.settings.previewFileName("holiday.mov", TrimJob.Fast)
                         }
                     }
                     CheckBox {
-                        enabled: !root.settings.replaceOriginal
                         text: "Overwrite files that already exist"
                         checked: root.settings.overwrite
                         onToggled: root.settings.overwrite = checked
