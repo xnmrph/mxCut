@@ -71,10 +71,27 @@ ApplicationWindow {
         player.source = url
     }
 
+    // The folder stays open, and reopens at the next launch, until closed.
     function openFolder(url) {
+        if (String(folderModel.folder) === String(url))
+            folderModel.refresh()
         folderModel.folder = url
         folderMode = true
-        player.source = folderModel.count > 0 ? folderModel.urlAt(0) : ""
+        appSettings.lastFolder = url
+        player.source = folderModel.firstVideo()
+    }
+
+    // Moving around in the file browser keeps the video that's open.
+    function browseFolder(url) {
+        folderModel.folder = url
+        appSettings.lastFolder = url
+        if (!player.loaded)
+            player.source = folderModel.firstVideo()
+    }
+
+    function closeFolder() {
+        folderMode = false
+        appSettings.lastFolder = ""
     }
 
     function selectVideo(url) {
@@ -83,9 +100,9 @@ ApplicationWindow {
     }
 
     function stepVideo(delta) {
-        const next = folderModel.indexOf(player.source) + delta
-        if (next >= 0 && next < folderModel.count)
-            player.source = folderModel.urlAt(next)
+        const next = folderModel.adjacentVideo(player.source, delta)
+        if (next.toString() !== "")
+            player.source = next
     }
 
     // This video is about to be deleted after its trim, so close it if it is
@@ -189,7 +206,13 @@ ApplicationWindow {
         job.start()
     }
 
-    Component.onCompleted: if (initialSource.toString() !== "") openPath(initialSource)
+    Component.onCompleted: {
+        folderModel.sort = appSettings.folderSort
+        if (initialSource.toString() !== "")
+            openPath(initialSource)
+        else if (appSettings.lastFolder.toString() !== "" && folderModel.isFolder(appSettings.lastFolder))
+            openFolder(appSettings.lastFolder)
+    }
 
     Connections {
         target: player
@@ -267,6 +290,7 @@ ApplicationWindow {
     VideoFolderModel {
         id: folderModel
         queue: exportQueue
+        onSortChanged: appSettings.folderSort = sort
     }
 
     Shortcut { sequence: "Space"; onActivated: player.togglePause() }
@@ -314,7 +338,9 @@ ApplicationWindow {
                 smooth: true
                 mipmap: true
             }
+            // The file browser takes over from these while a folder is open.
             IconButton {
+                visible: !window.folderMode
                 text: "Open video"
                 iconPath: Icons.movie
                 tip: "Open one video (Ctrl+O)"
@@ -322,6 +348,7 @@ ApplicationWindow {
                 onClicked: openDialog.open()
             }
             IconButton {
+                visible: !window.folderMode
                 text: "Open folder"
                 iconPath: Icons.folder
                 tip: "Trim a folder of videos as a batch (Ctrl+Shift+O)"
@@ -381,23 +408,52 @@ ApplicationWindow {
         }
     }
 
-    RowLayout {
+    // The file browser, the editor and the export queue. Drag the lines
+    // between them to resize the side panels.
+    SplitView {
+        id: panes
         anchors.fill: parent
         anchors.topMargin: ffmpegBanner.height
-        spacing: 0
+        orientation: Qt.Horizontal
+
+        // A thin line with room either side to grab it.
+        handle: Item {
+            readonly property bool active: SplitHandle.pressed || SplitHandle.hovered
+            implicitWidth: 5
+            Rectangle {
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: parent.active ? 3 : 1
+                height: parent.height
+                color: parent.active ? Theme.accent : Theme.border
+            }
+        }
+
+        onResizingChanged: {
+            if (resizing)
+                return
+            if (browser.visible)
+                appSettings.browserWidth = Math.round(browser.width)
+            appSettings.queueWidth = Math.round(queuePanel.width)
+        }
 
         FileSidebar {
-            Layout.preferredWidth: 260
-            Layout.fillHeight: true
+            id: browser
             visible: window.folderMode
+            SplitView.minimumWidth: Theme.panelMinWidth
+            SplitView.preferredWidth: Math.max(Theme.panelMinWidth, appSettings.browserWidth)
+            SplitView.maximumWidth: Math.max(Theme.panelMinWidth, window.width * 0.5)
             folderModel: folderModel
             currentUrl: player.source
             onVideoSelected: (url) => window.selectVideo(url)
+            onFolderOpened: (url) => window.browseFolder(url)
+            onChooseFolder: folderDialog.open()
+            onCloseRequested: window.closeFolder()
         }
 
         ColumnLayout {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
+            SplitView.fillWidth: true
+            // Room for the in/out readout, trim mode and queue buttons below.
+            SplitView.minimumWidth: 820
             spacing: 0
 
             // Program monitor
@@ -454,7 +510,7 @@ ApplicationWindow {
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter
                         text: player.errorString !== "" ? "Could not open this file: " + player.errorString
-                            : window.folderMode && folderModel.count === 0 ? "This folder has no videos"
+                            : window.folderMode && folderModel.videoCount === 0 ? "This folder has no videos"
                             : "Open a video or a folder, or drop one here"
                         color: Theme.textDim
                         font.pixelSize: 16
@@ -799,8 +855,10 @@ ApplicationWindow {
         }
 
         QueuePanel {
-            Layout.preferredWidth: 300
-            Layout.fillHeight: true
+            id: queuePanel
+            SplitView.minimumWidth: Theme.panelMinWidth
+            SplitView.preferredWidth: Math.max(Theme.panelMinWidth, appSettings.queueWidth)
+            SplitView.maximumWidth: Math.max(Theme.panelMinWidth, window.width * 0.4)
             queue: exportQueue
             settings: appSettings
             formatTime: window.timecode

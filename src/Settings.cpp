@@ -93,6 +93,18 @@ void Settings::setInKey(const QString &v) { store("keys/in", v.isEmpty() ? defau
 QString Settings::outKey() const { return value("keys/out", defaultOutKey).toString(); }
 void Settings::setOutKey(const QString &v) { store("keys/out", v.isEmpty() ? defaultOutKey : v); }
 
+QUrl Settings::lastFolder() const { return value("browser/lastFolder", QUrl()).toUrl(); }
+void Settings::setLastFolder(const QUrl &v) { store("browser/lastFolder", v); }
+
+int Settings::folderSort() const { return qBound(0, value("browser/sort", 0).toInt(), 3); }
+void Settings::setFolderSort(int v) { store("browser/sort", qBound(0, v, 3)); }
+
+int Settings::browserWidth() const { return qMax(0, value("browser/width", 380).toInt()); }
+void Settings::setBrowserWidth(int v) { store("browser/width", qMax(0, v)); }
+
+int Settings::queueWidth() const { return qMax(0, value("queue/width", 300).toInt()); }
+void Settings::setQueueWidth(int v) { store("queue/width", qMax(0, v)); }
+
 TrimOptions Settings::trimOptions() const
 {
     TrimOptions o;

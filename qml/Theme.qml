@@ -24,6 +24,10 @@ QtObject {
     // Text that reads on top of a segment colour.
     function onColor(c) { return 0.299 * c.r + 0.587 * c.g + 0.114 * c.b > 0.6 ? "#000000" : "#ffffff" }
     readonly property int radius: 6
+    // The narrowest a thumbnail card in the file browser gets. The browser
+    // is at least one card wide, and the export queue at least as wide.
+    readonly property int thumbnailWidth: 160
+    readonly property int panelMinWidth: thumbnailWidth + 24
     readonly property string mono: Qt.platform.os === "windows" ? "Consolas"
                                   : Qt.platform.os === "osx" ? "Menlo" : "monospace"
 

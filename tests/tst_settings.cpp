@@ -18,6 +18,7 @@ private slots:
     void deleteOriginalKeepsOldChoice();
     void ffmpegPathOverride();
     void shortcutKeys();
+    void fileBrowser();
 };
 
 void TestSettings::initTestCase()
@@ -139,6 +140,28 @@ void TestSettings::shortcutKeys()
     QCOMPARE(again.outKey(), QStringLiteral("D"));
     again.resetShortcuts();
     QCOMPARE(again.inKey(), QStringLiteral("A"));
+}
+
+void TestSettings::fileBrowser()
+{
+    {
+        Settings settings;
+        QCOMPARE(settings.lastFolder(), QUrl());
+        QCOMPARE(settings.browserWidth(), 380);
+        QCOMPARE(settings.queueWidth(), 300);
+        settings.setLastFolder(QUrl::fromLocalFile("/tmp/clips"));
+        settings.setFolderSort(2);
+        settings.setBrowserWidth(250);
+        settings.setQueueWidth(-5);
+    }
+    Settings again;
+    QCOMPARE(again.lastFolder(), QUrl::fromLocalFile("/tmp/clips"));
+    QCOMPARE(again.folderSort(), 2);
+    QCOMPARE(again.browserWidth(), 250);
+    QCOMPARE(again.queueWidth(), 0);
+    // Closing the folder forgets it.
+    again.setLastFolder(QUrl());
+    QCOMPARE(Settings().lastFolder(), QUrl());
 }
 
 QTEST_GUILESS_MAIN(TestSettings)

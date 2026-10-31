@@ -31,8 +31,11 @@ which one A and D change, and click **×** to remove it. When you click
 
 ### Trim a whole folder
 
-1. Click **Open folder** or drag a folder onto the window. Its videos are
-   listed on the left.
+1. Click **Open folder** or drag a folder onto the window. Its videos show
+   on the left as thumbnails, newest first and grouped by day, with any
+   subfolders above them. Click a folder to go into it, or the up arrow to go
+   back. Search, sort and the **Queued** and **Trimmed** tabs help find a
+   video, and each card is tagged with its state in the queue.
 2. For each video you want, mark the cut and press **Add to queue** (**Q**).
    mxCut moves on to the next video.
 3. Under the queue, rename any video's output if you like, and use
@@ -41,6 +44,11 @@ which one A and D change, and click **×** to remove it. When you click
 
 The export queue is there for a single video too: press **Add to queue** to
 rename it before trimming.
+
+mxCut reopens the folder the next time it starts. Click **×** at the top of
+the folder panel to close it and bring back **Open video** and **Open folder**.
+Drag the line at the edge of the folder panel or the export queue to resize
+it.
 
 ### Fast or Accurate
 

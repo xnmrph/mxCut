@@ -27,6 +27,13 @@ class Settings : public QObject
     Q_PROPERTY(QString ffmpegPath READ ffmpegPath WRITE setFfmpegPath NOTIFY ffmpegPathChanged)
     Q_PROPERTY(QString inKey READ inKey WRITE setInKey NOTIFY changed)
     Q_PROPERTY(QString outKey READ outKey WRITE setOutKey NOTIFY changed)
+    // The folder open in the file browser, reopened at the next launch;
+    // empty once the user closes it.
+    Q_PROPERTY(QUrl lastFolder READ lastFolder WRITE setLastFolder NOTIFY changed)
+    Q_PROPERTY(int folderSort READ folderSort WRITE setFolderSort NOTIFY changed)
+    // Widths of the file browser and the export queue, as last dragged.
+    Q_PROPERTY(int browserWidth READ browserWidth WRITE setBrowserWidth NOTIFY changed)
+    Q_PROPERTY(int queueWidth READ queueWidth WRITE setQueueWidth NOTIFY changed)
 
 public:
     explicit Settings(QObject *parent = nullptr);
@@ -61,6 +68,14 @@ public:
     void setInKey(const QString &value);
     QString outKey() const;
     void setOutKey(const QString &value);
+    QUrl lastFolder() const;
+    void setLastFolder(const QUrl &value);
+    int folderSort() const;
+    void setFolderSort(int value);
+    int browserWidth() const;
+    void setBrowserWidth(int value);
+    int queueWidth() const;
+    void setQueueWidth(int value);
 
     TrimOptions trimOptions() const;
 
