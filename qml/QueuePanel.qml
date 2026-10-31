@@ -24,6 +24,9 @@ Rectangle {
 
     signal jobActivated(url source)
 
+    // Dragged down to its narrowest, labels shorten to fit.
+    readonly property bool narrow: width > 0 && width < 260
+
     color: Theme.surface
 
     FolderDialog {
@@ -43,15 +46,8 @@ Rectangle {
         font.letterSpacing: 0.8
     }
 
-    Rectangle {
-        width: 1
-        height: parent.height
-        color: Theme.border
-    }
-
     ColumnLayout {
         anchors.fill: parent
-        anchors.leftMargin: 1
         spacing: 0
 
         RowLayout {
@@ -160,6 +156,7 @@ Rectangle {
                         color: Theme.textDim
                         font.pixelSize: 11
                         font.family: Theme.mono
+                        wrapMode: Text.WordWrap
                     }
                     RowLayout {
                         Layout.fillWidth: true
@@ -403,7 +400,7 @@ Rectangle {
             Layout.leftMargin: 8
             implicitHeight: 26
             visible: !root.settings.saveBesideSource
-            text: "Save next to each original instead"
+            text: root.narrow ? "Save next to originals" : "Save next to each original instead"
             tint: Theme.textDim
             onClicked: root.settings.saveBesideSource = true
         }
@@ -447,6 +444,7 @@ Rectangle {
             spacing: 6
 
             Text {
+                visible: !root.narrow
                 text: "At once"
                 color: Theme.textDim
                 font.pixelSize: 12
@@ -476,7 +474,8 @@ Rectangle {
             }
             Item { Layout.fillWidth: true }
             IconButton {
-                text: "Clear done"
+                text: root.narrow ? "Clear" : "Clear done"
+                tip: root.narrow ? "Clear done" : ""
                 enabled: root.queue.finishedCount > 0
                 onClicked: root.queue.clearFinished()
             }
