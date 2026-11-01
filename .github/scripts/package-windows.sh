@@ -30,4 +30,10 @@ while :; do
     [ "$added" = 0 ] && break
 done
 
+# The updater talks to GitHub over HTTPS, which needs a TLS plugin.
+if ! ls "$dist"/tls/*.dll >/dev/null 2>&1; then
+    echo "No Qt TLS plugin was deployed; update checks would fail" >&2
+    exit 1
+fi
+
 echo "Packaged $(find "$dist" -type f | wc -l) files, $(du -sh "$dist" | cut -f1)"

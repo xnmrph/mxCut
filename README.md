@@ -50,6 +50,12 @@ the folder panel to close it and bring back **Open video** and **Open folder**.
 Drag the line at the edge of the folder panel or the export queue to resize
 it.
 
+Right-click a video or folder in the panel to **Rename** it, **Copy path**, or
+**Delete** it. These change the file itself: a deleted file goes to the
+Recycle Bin or Trash, so you can put it back from there. Ctrl-click and
+Shift-click select several, to copy their paths or delete them together.
+mxCut won't rename or delete a video while it's being trimmed.
+
 ### Fast or Accurate
 
 - **Fast** finishes in seconds and keeps full quality, but the cut can start a
@@ -72,6 +78,9 @@ it.
 | Ctrl + O | Open a video |
 | Ctrl + Shift + O | Open a folder |
 | Ctrl + , | Settings |
+| F2 | Rename the selected file (folder panel) |
+| Delete | Move the selected files to the Recycle Bin (folder panel) |
+| Ctrl + A | Select every video in the folder panel |
 
 ## Settings
 
@@ -84,6 +93,12 @@ Click the gear in the top right corner to change:
 - **Keyboard shortcuts** for setting the start and end (A and D by default).
 - **Accurate mode quality**, including faster encoding on NVIDIA, Intel or AMD
   graphics cards when yours supports it.
+
+- **Updates** (Windows): mxCut checks for a new version when it starts, and
+  shows **Update to …** at the top when there is one. Click it to see what's
+  new, then **Download and install**: mxCut downloads the installer, checks
+  it, closes, and installs the new version over the old one. Turn the check
+  off or check by hand under **Updates**.
 
 If a trim fails, mxCut says what went wrong. Hover over the message for the
 details.

@@ -75,6 +75,14 @@ public:
     Q_INVOKABLE void start();
     Q_INVOKABLE void cancel();
 
+    // A video, or a folder of them, was renamed: point jobs at the new path.
+    Q_INVOKABLE void sourceMoved(const QUrl &from, const QUrl &to);
+    // A video, or a folder of them, was deleted: drop its jobs that haven't
+    // run. Finished ones stay, to show what was done.
+    Q_INVOKABLE void sourceRemoved(const QUrl &source);
+    // Whether a job for this video, or for one inside this folder, is running.
+    Q_INVOKABLE bool busyWith(const QUrl &path) const;
+
     // The most recent job for a video, or null if it was never queued.
     Q_INVOKABLE TrimJob *jobFor(const QUrl &source) const;
 

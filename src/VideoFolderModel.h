@@ -107,6 +107,22 @@ public:
     // The video delta places from url among those shown.
     Q_INVOKABLE QUrl adjacentVideo(const QUrl &url, int delta) const;
 
+    // File actions for the browser's menu. They act on the files on disk;
+    // the folder refreshes itself afterwards.
+
+    // Why newName can't be used for url, or empty if it can.
+    Q_INVOKABLE QString renameError(const QUrl &url, const QString &newName) const;
+    // Renames, retrying for a few seconds while another program (the
+    // player, say) lets go of the file; then emits renamed or renameFailed.
+    Q_INVOKABLE void rename(const QUrl &url, const QString &newName);
+    // Moves files and folders to the trash, or deletes them for good, with
+    // the same retries; then emits trashFinished.
+    Q_INVOKABLE void trash(const QVariantList &urls, bool permanently = false);
+    // The path as the system writes it, for copying.
+    Q_INVOKABLE QString nativePath(const QUrl &url) const;
+    // Whether path is folder or inside it.
+    Q_INVOKABLE static bool isInside(const QUrl &path, const QUrl &folder);
+
     static const QStringList &videoExtensions();
 
 signals:
@@ -118,6 +134,10 @@ signals:
     void searchChanged();
     void revisionChanged();
     void queueChanged();
+    void renamed(const QUrl &from, const QUrl &to);
+    void renameFailed(const QUrl &url, const QString &error);
+    // removed and failed are lists of URLs; error explains the first failure.
+    void trashFinished(const QVariantList &removed, const QVariantList &failed, const QString &error);
 
 private:
     struct Entry {
@@ -143,6 +163,9 @@ private:
     void stopThumbnails();
     void launchThumbnail(int entry, bool fromStart);
     void thumbnailFinished(QProcess *process, int entry, const QString &file, bool fromStart);
+    void tryRename(const QString &from, const QString &to, int attempt);
+    void tryTrash(QStringList pending, QVariantList removed, QVariantList failed, QString error,
+                  bool permanently, int attempt);
 
     QUrl m_folder;
     QList<Entry> m_entries;

@@ -25,6 +25,7 @@ private slots:
     void usesSettingsWhenJobsStart();
     void queuesSegments();
     void namesEachOutput();
+    void followsRenamesAndDeletes();
 
 private:
     QUrl clip(int n) const { return QUrl::fromLocalFile(m_clips.at(n)); }
@@ -265,6 +266,30 @@ void TestExportQueue::namesEachOutput()
     QVERIFY(QFileInfo::exists(named));
     QFile::remove(named);
     QFile::remove(patterned);
+}
+
+void TestExportQueue::followsRenamesAndDeletes()
+{
+    ExportQueue queue;
+    const QUrl a = QUrl::fromLocalFile("/videos/a.mp4");
+    const QUrl b = QUrl::fromLocalFile("/videos/sub/b.mp4");
+    queue.add(a, 0, 1, TrimJob::Fast);
+    queue.add(b, 0, 1, TrimJob::Fast);
+
+    queue.sourceMoved(a, QUrl::fromLocalFile("/videos/renamed.mp4"));
+    QVERIFY(!queue.jobFor(a));
+    QVERIFY(queue.jobFor(QUrl::fromLocalFile("/videos/renamed.mp4")));
+    QCOMPARE(queue.data(queue.index(0), ExportQueue::NameRole).toString(), QStringLiteral("renamed.mp4"));
+
+    // A renamed folder moves what's inside it.
+    queue.sourceMoved(QUrl::fromLocalFile("/videos/sub"), QUrl::fromLocalFile("/videos/other"));
+    QVERIFY(queue.jobFor(QUrl::fromLocalFile("/videos/other/b.mp4")));
+    QVERIFY(!queue.busyWith(QUrl::fromLocalFile("/videos")));
+
+    queue.sourceRemoved(QUrl::fromLocalFile("/videos/other"));
+    QCOMPARE(queue.count(), 1);
+    queue.sourceRemoved(QUrl::fromLocalFile("/videos/renamed.mp4"));
+    QCOMPARE(queue.count(), 0);
 }
 
 QTEST_GUILESS_MAIN(TestExportQueue)

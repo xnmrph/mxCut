@@ -9,6 +9,9 @@ Dialog {
 
     required property Settings settings
     required property EncoderProbe probe
+    required property Updater updater
+
+    signal showUpdate()
 
     title: "Settings"
     modal: true
@@ -337,6 +340,50 @@ Dialog {
                     Button {
                         text: "Reset to A and D"
                         onClicked: root.settings.resetShortcuts()
+                    }
+                }
+            }
+
+            GroupBox {
+                title: "Updates"
+                Layout.fillWidth: true
+                visible: root.updater.supported
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    spacing: 6
+
+                    CheckBox {
+                        text: "Check for updates when mxCut starts"
+                        checked: root.settings.checkForUpdates
+                        onToggled: root.settings.checkForUpdates = checked
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 10
+                        Button {
+                            text: root.updater.state === Updater.Available || root.updater.state === Updater.ReadyToInstall
+                                  ? "Update to " + root.updater.latestVersion + "…" : "Check now"
+                            enabled: root.updater.state !== Updater.Checking && root.updater.state !== Updater.Downloading
+                            onClicked: {
+                                if (root.updater.state === Updater.Available || root.updater.state === Updater.ReadyToInstall)
+                                    root.showUpdate()
+                                else
+                                    root.updater.check()
+                            }
+                        }
+                        Label {
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                            color: root.updater.state === Updater.Failed ? Theme.danger : Theme.textDim
+                            text: root.updater.state === Updater.Checking ? "Checking…"
+                                : root.updater.state === Updater.UpToDate ? "You have the latest version, " + root.updater.currentVersion + "."
+                                : root.updater.state === Updater.Available ? "Version " + root.updater.latestVersion + " is available."
+                                : root.updater.state === Updater.Downloading ? "Downloading " + root.updater.latestVersion + "…"
+                                : root.updater.state === Updater.ReadyToInstall ? root.updater.latestVersion + " is ready to install."
+                                : root.updater.state === Updater.Failed ? root.updater.errorString
+                                : "This is version " + root.updater.currentVersion + "."
+                        }
                     }
                 }
             }

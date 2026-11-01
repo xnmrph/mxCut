@@ -45,6 +45,8 @@ makensis -DVERSION=0.1.0 -DDIST="$(cygpath -w "$PWD/dist/mxCut")" packaging/wind
   grouped by day, with thumbnails and durations made by FFmpeg, and each video's queue state.
 - `src/Settings.*` holds the saved choices; `src/Encoders.*` maps each encoder to FFmpeg arguments, and
   `src/EncoderProbe.*` finds FFmpeg and tests which encoders work.
+- `src/Updater.*` checks GitHub for a newer release and, on Windows, downloads and runs its installer
+  with `/UPDATE` (Qt Network; the installer then skips its first pages and waits for mxCut to close).
 - `src/MediaPreview.*` makes the timeline's thumbnails and waveform with FFmpeg and caches them;
   `src/WaveformView.*` draws the waveform.
 - `qml/Main.qml` is the window, `qml/Timeline.qml` the ruler, thumbnail and audio tracks with the
