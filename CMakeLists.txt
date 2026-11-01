@@ -5,7 +5,7 @@ project(mxcut VERSION 1.0.7 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Qml Quick QuickControls2 OpenGL)
+find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Network Qml Quick QuickControls2 OpenGL)
 include(GNUInstallDirs)
 
 # pkg-config only supplies hints: under MSYS2 it can report POSIX paths such as
@@ -48,6 +48,7 @@ qt_add_qml_module(mxcut
         qml/FileSidebar.qml
         qml/QueuePanel.qml
         qml/SettingsDialog.qml
+        qml/UpdateDialog.qml
     SOURCES
         src/MpvItem.h src/MpvItem.cpp
         src/TrimJob.h src/TrimJob.cpp
@@ -58,10 +59,11 @@ qt_add_qml_module(mxcut
         src/EncoderProbe.h src/EncoderProbe.cpp
         src/MediaPreview.h src/MediaPreview.cpp
         src/WaveformView.h src/WaveformView.cpp
+        src/Updater.h src/Updater.cpp
 )
 
 target_link_libraries(mxcut PRIVATE
-    Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2 Qt6::OpenGL
+    Qt6::Core Qt6::Gui Qt6::Network Qt6::Qml Qt6::Quick Qt6::QuickControls2 Qt6::OpenGL
     mpv::mpv
 )
 
@@ -81,6 +83,8 @@ if(WIN32)
     set(ICON_PATH "${CMAKE_CURRENT_SOURCE_DIR}/packaging/icons/mxcut.ico")
     configure_file(packaging/windows/mxcut.rc.in mxcut.rc @ONLY)
     target_sources(mxcut PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/mxcut.rc")
+    # ShellExecute, to start the updater's installer with admin rights.
+    target_link_libraries(mxcut PRIVATE shell32)
 endif()
 
 set_target_properties(mxcut PROPERTIES

@@ -105,6 +105,9 @@ void Settings::setBrowserWidth(int v) { store("browser/width", qMax(0, v)); }
 int Settings::queueWidth() const { return qMax(0, value("queue/width", 300).toInt()); }
 void Settings::setQueueWidth(int v) { store("queue/width", qMax(0, v)); }
 
+bool Settings::checkForUpdates() const { return value("updates/check", true).toBool(); }
+void Settings::setCheckForUpdates(bool v) { store("updates/check", v); }
+
 TrimOptions Settings::trimOptions() const
 {
     TrimOptions o;

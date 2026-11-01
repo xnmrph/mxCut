@@ -1,5 +1,8 @@
 #include "ExportQueue.h"
 
+#include "VideoFolderModel.h"
+
+#include <QDir>
 #include <QFileInfo>
 
 ExportQueue::ExportQueue(QObject *parent)
@@ -291,4 +294,40 @@ void ExportQueue::setRunning(bool running)
         return;
     m_running = running;
     emit runningChanged();
+}
+
+void ExportQueue::sourceMoved(const QUrl &from, const QUrl &to)
+{
+    const QString fromPath = QDir::cleanPath(from.toLocalFile());
+    const QString toPath = QDir::cleanPath(to.toLocalFile());
+    bool moved = false;
+    for (TrimJob *job : std::as_const(m_jobs)) {
+        if (job->state() == TrimJob::Running || !VideoFolderModel::isInside(job->source(), from))
+            continue;
+        const QUrl old = job->source();
+        job->setSource(QUrl::fromLocalFile(toPath + QDir::cleanPath(old.toLocalFile()).mid(fromPath.size())));
+        onJobChanged(job, {SourceRole, NameRole});
+        emit sourceChanged(old);
+        emit sourceChanged(job->source());
+        moved = true;
+    }
+    if (moved)
+        refreshDefaultNames();
+}
+
+void ExportQueue::sourceRemoved(const QUrl &source)
+{
+    for (int row = int(m_jobs.size()) - 1; row >= 0; --row) {
+        const TrimJob *job = m_jobs.at(row);
+        if (job->state() != TrimJob::Running && job->state() != TrimJob::Finished
+            && VideoFolderModel::isInside(job->source(), source))
+            remove(row);
+    }
+}
+
+bool ExportQueue::busyWith(const QUrl &path) const
+{
+    return std::any_of(m_jobs.cbegin(), m_jobs.cend(), [&path](const TrimJob *job) {
+        return job->state() == TrimJob::Running && VideoFolderModel::isInside(job->source(), path);
+    });
 }

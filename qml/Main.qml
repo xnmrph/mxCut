@@ -105,6 +105,121 @@ ApplicationWindow {
             player.source = next
     }
 
+    // Renaming and deleting from the file browser. The player and the
+    // timeline previews keep the open video's file open, which Windows won't
+    // rename or delete, so they let go of it first and come back after.
+    property url heldSource
+    property url sourceAfterDelete
+    property bool deletingPermanently: false
+
+    // Whether a trim is using this file, or anything inside this folder.
+    function trimming(url) {
+        return exportQueue.busyWith(url) || (job.running && folderModel.isInside(job.source, url))
+    }
+
+    function letGoOf(urls) {
+        if (!player.loaded)
+            return
+        for (const url of urls) {
+            if (folderModel.isInside(player.source, url)) {
+                heldSource = player.source
+                player.source = ""
+                return
+            }
+        }
+    }
+
+    function renameFile(url, name) {
+        if (trimming(url)) {
+            browser.showMessage("That's being trimmed right now, so it can't be renamed yet.")
+            return
+        }
+        letGoOf([url])
+        folderModel.rename(url, name)
+    }
+
+    function deleteFiles(urls, permanently) {
+        if (urls.some(u => trimming(u))) {
+            browser.showMessage("Something there is being trimmed right now, so it can't be deleted yet.")
+            return
+        }
+        // If the open video goes, show the next one that stays.
+        const gone = u => urls.some(d => folderModel.isInside(u, d))
+        sourceAfterDelete = ""
+        if (player.loaded && gone(player.source)) {
+            for (const delta of [1, -1]) {
+                let next = folderModel.adjacentVideo(player.source, delta)
+                while (next.toString() !== "" && gone(next))
+                    next = folderModel.adjacentVideo(next, delta)
+                if (next.toString() !== "") {
+                    sourceAfterDelete = next
+                    break
+                }
+            }
+        }
+        deletingPermanently = permanently
+        letGoOf(urls)
+        folderModel.trash(urls, permanently)
+    }
+
+    // Moves what was remembered about a renamed video, or about every video
+    // in a renamed folder.
+    function movePath(url, from, to) {
+        const s = String(url), f = String(from)
+        return s === f ? String(to) : String(to) + s.substring(f.length)
+    }
+
+    Connections {
+        target: folderModel
+        function onRenamed(from, to) {
+            exportQueue.sourceMoved(from, to)
+            for (const key of Object.keys(window.cuts)) {
+                if (folderModel.isInside(key, from)) {
+                    window.cuts[window.movePath(key, from, to)] = window.cuts[key]
+                    delete window.cuts[key]
+                }
+            }
+            if (window.heldSource.toString() !== "") {
+                const held = window.heldSource
+                window.heldSource = ""
+                player.source = folderModel.isInside(held, from) ? window.movePath(held, from, to) : held
+            }
+            browser.select([to])
+        }
+        function onRenameFailed(url, error) {
+            browser.showMessage(error)
+            if (window.heldSource.toString() !== "") {
+                player.source = window.heldSource
+                window.heldSource = ""
+            }
+        }
+        function onTrashFinished(removed, failed, error) {
+            for (const url of removed) {
+                exportQueue.sourceRemoved(url)
+                for (const key of Object.keys(window.cuts)) {
+                    if (folderModel.isInside(key, url))
+                        delete window.cuts[key]
+                }
+            }
+            if (window.heldSource.toString() !== "") {
+                const held = window.heldSource
+                window.heldSource = ""
+                const deleted = removed.some(u => folderModel.isInside(held, u))
+                player.source = deleted ? window.sourceAfterDelete : held
+            }
+            if (failed.length > 0) {
+                if (window.deletingPermanently)
+                    browser.showMessage(error)
+                else
+                    browser.offerPermanentDelete(failed, error)
+            } else if (removed.length > 0) {
+                const what = removed.length === 1 ? "" : " " + removed.length + " items"
+                browser.showMessage(window.deletingPermanently ? "Deleted" + what
+                                                               : "Moved" + what + " to the " + browser.trashName, false)
+            }
+        }
+    }
+
     // This video is about to be deleted after its trim, so close it if it is
     // showing; reopenFile shows the trim, or the original if it was kept.
     property url releasedSource
@@ -285,6 +400,20 @@ ApplicationWindow {
         id: settingsDialog
         settings: appSettings
         probe: encoderProbe
+        updater: updater
+        onShowUpdate: updateDialog.open()
+    }
+
+    // Windows builds look for a new version at launch and can install it.
+    Updater {
+        id: updater
+        Component.onCompleted: if (supported && appSettings.checkForUpdates) check()
+    }
+
+    UpdateDialog {
+        id: updateDialog
+        updater: updater
+        busy: window.busy
     }
 
     VideoFolderModel {
@@ -362,6 +491,20 @@ ApplicationWindow {
                 text: player.loaded ? window.fileName(player.source) : ""
                 color: Theme.textDim
                 font.pixelSize: 13
+            }
+            IconButton {
+                visible: updater.supported && (updater.state === Updater.Available
+                                               || updater.state === Updater.Downloading
+                                               || updater.state === Updater.ReadyToInstall)
+                primary: true
+                implicitHeight: 28
+                iconPath: Icons.arrowUp
+                iconSize: 15
+                text: updater.state === Updater.Downloading ? "Downloading " + Math.round(updater.progress * 100) + "%"
+                    : updater.state === Updater.ReadyToInstall ? "Install update"
+                    : "Update to " + updater.latestVersion
+                tip: "mxCut " + updater.latestVersion + " is out"
+                onClicked: updateDialog.open()
             }
             IconButton {
                 iconPath: Icons.keyboard
@@ -448,6 +591,8 @@ ApplicationWindow {
             onFolderOpened: (url) => window.browseFolder(url)
             onChooseFolder: folderDialog.open()
             onCloseRequested: window.closeFolder()
+            onRenameRequested: (url, name) => window.renameFile(url, name)
+            onDeleteRequested: (urls, permanently) => window.deleteFiles(urls, permanently)
         }
 
         ColumnLayout {

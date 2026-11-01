@@ -1,8 +1,12 @@
 ; Windows installer for mxCut, built with NSIS.
 ; makensis -DVERSION=0.1.0 -DDIST=path\to\mxCut -DOUTFILE=setup.exe installer.nsi
+;
+; mxCut's updater runs it with /UPDATE: that skips straight to installing
+; over the current copy, once mxCut has closed.
 
 Unicode true
 !include "MUI2.nsh"
+!include "FileFunc.nsh"
 
 !ifndef VERSION
   !define VERSION "0.0.0"
@@ -40,8 +44,13 @@ VIAddVersionKey "LegalCopyright" "mxCut contributors"
 !define MUI_ABORTWARNING
 !define MUI_FINISHPAGE_RUN "$INSTDIR\${EXE}"
 
+Var Updating
+
+!define MUI_PAGE_CUSTOMFUNCTION_PRE SkipWhenUpdating
 !insertmacro MUI_PAGE_WELCOME
+!define MUI_PAGE_CUSTOMFUNCTION_PRE SkipWhenUpdating
 !insertmacro MUI_PAGE_DIRECTORY
+!define MUI_PAGE_CUSTOMFUNCTION_PRE SkipWhenUpdating
 !insertmacro MUI_PAGE_COMPONENTS
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_PAGE_FINISH
@@ -53,11 +62,46 @@ VIAddVersionKey "LegalCopyright" "mxCut contributors"
 ; allow a new or empty folder, or one that already holds this app.
 ; Find an install made before the rename.
 Function .onInit
+  StrCpy $Updating 0
+  ${GetParameters} $R0
+  ClearErrors
+  ${GetOptions} $R0 "/UPDATE" $R1
+  IfErrors +2
+    StrCpy $Updating 1
   ReadRegStr $0 HKLM "Software\mxCut" "InstallDir"
   StrCmp $0 "" 0 +4
     ReadRegStr $0 HKLM "${OLD_KEY}" "InstallDir"
     StrCmp $0 "" +2
       StrCpy $INSTDIR $0
+FunctionEnd
+
+Function SkipWhenUpdating
+  StrCmp $Updating 1 0 +2
+    Abort
+FunctionEnd
+
+; mxCut quits as the updater starts this; give it up to 15 seconds to let
+; go of its files.
+Function WaitForApp
+  StrCpy $R2 0
+  retry:
+    IfFileExists "$INSTDIR\${EXE}" 0 free
+    ClearErrors
+    FileOpen $R3 "$INSTDIR\${EXE}" a
+    IfErrors 0 opened
+    IntOp $R2 $R2 + 1
+    IntCmp $R2 30 gaveup
+    Sleep 500
+    Goto retry
+  opened:
+    FileClose $R3
+    Goto free
+  gaveup:
+    MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "mxCut is still running. Close it, then press Retry." IDRETRY 0 IDCANCEL +3
+      StrCpy $R2 0
+      Goto retry
+    Quit
+  free:
 FunctionEnd
 
 Function .onVerifyInstDir
@@ -80,6 +124,7 @@ FunctionEnd
 
 Section "mxCut (required)" SecApp
   SectionIn RO
+  Call WaitForApp
   ; Clear out an older version's files first, so no stale DLLs are left behind.
   IfFileExists "$INSTDIR\${EXE}" clear
   IfFileExists "$INSTDIR\${OLD_EXE}" clear keep
@@ -113,6 +158,9 @@ Section "mxCut (required)" SecApp
 SectionEnd
 
 Section "Desktop shortcut" SecDesktop
+  ; An update keeps the shortcuts the user already has, or has removed.
+  StrCmp $Updating 1 0 +2
+    Return
   CreateShortcut "$DESKTOP\${APP}.lnk" "$INSTDIR\${EXE}"
 SectionEnd
 

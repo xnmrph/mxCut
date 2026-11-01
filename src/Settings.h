@@ -34,6 +34,8 @@ class Settings : public QObject
     // Widths of the file browser and the export queue, as last dragged.
     Q_PROPERTY(int browserWidth READ browserWidth WRITE setBrowserWidth NOTIFY changed)
     Q_PROPERTY(int queueWidth READ queueWidth WRITE setQueueWidth NOTIFY changed)
+    // Look for a new version when mxCut starts.
+    Q_PROPERTY(bool checkForUpdates READ checkForUpdates WRITE setCheckForUpdates NOTIFY changed)
 
 public:
     explicit Settings(QObject *parent = nullptr);
@@ -76,6 +78,8 @@ public:
     void setBrowserWidth(int value);
     int queueWidth() const;
     void setQueueWidth(int value);
+    bool checkForUpdates() const;
+    void setCheckForUpdates(bool value);
 
     TrimOptions trimOptions() const;
 

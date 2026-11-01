@@ -22,6 +22,9 @@ private slots:
     void parentFolder();
     void makesThumbnailsAndDurations();
     void seesNewFiles();
+    void renamesFiles();
+    void deletesFiles();
+    void insideFolders();
 
 private:
     static void touch(const QString &path, const QDateTime &modified = {})
@@ -252,6 +255,72 @@ void TestVideoFolderModel::seesNewFiles()
     QCOMPARE(model.videoCount(), 1);
     touch(dir.filePath("b.mp4"));
     QTRY_COMPARE_WITH_TIMEOUT(model.videoCount(), 2, 5000);
+}
+
+void TestVideoFolderModel::renamesFiles()
+{
+    QTemporaryDir dir;
+    touch(dir.filePath("a.mp4"));
+    touch(dir.filePath("b.mp4"));
+    VideoFolderModel model;
+    model.setFolder(QUrl::fromLocalFile(dir.path()));
+    const QUrl a = QUrl::fromLocalFile(dir.filePath("a.mp4"));
+
+    QVERIFY(!model.renameError(a, "").isEmpty());
+    QVERIFY(!model.renameError(a, "b.mp4").isEmpty());
+    QVERIFY(!model.renameError(a, "x/y.mp4").isEmpty());
+    QVERIFY(!model.renameError(a, "what?.mp4").isEmpty());
+    QVERIFY(!model.renameError(a, "trailing.").isEmpty());
+    QVERIFY(model.renameError(a, "A.mp4").isEmpty());
+    QVERIFY(model.renameError(a, "c.mp4").isEmpty());
+
+    QSignalSpy renamed(&model, &VideoFolderModel::renamed);
+    QSignalSpy failed(&model, &VideoFolderModel::renameFailed);
+    model.rename(a, "c.mp4");
+    QTRY_COMPARE(renamed.count(), 1);
+    QCOMPARE(renamed.at(0).at(0).toUrl(), a);
+    QCOMPARE(renamed.at(0).at(1).toUrl(), QUrl::fromLocalFile(dir.filePath("c.mp4")));
+    QVERIFY(QFile::exists(dir.filePath("c.mp4")));
+    QVERIFY(!QFile::exists(dir.filePath("a.mp4")));
+    QTRY_VERIFY(model.indexOf(QUrl::fromLocalFile(dir.filePath("c.mp4"))) >= 0);
+
+    // Only the case changes.
+    model.rename(QUrl::fromLocalFile(dir.filePath("c.mp4")), "C.mp4");
+    QTRY_COMPARE(renamed.count(), 2);
+    QVERIFY(QDir(dir.path()).entryList(QDir::Files).contains("C.mp4"));
+
+    model.rename(QUrl::fromLocalFile(dir.filePath("C.mp4")), "b.mp4");
+    QTRY_COMPARE(failed.count(), 1);
+    QVERIFY(QFile::exists(dir.filePath("C.mp4")));
+}
+
+void TestVideoFolderModel::deletesFiles()
+{
+    QTemporaryDir dir;
+    touch(dir.filePath("a.mp4"));
+    QVERIFY(QDir(dir.path()).mkdir("sub"));
+    touch(dir.filePath("sub/b.mp4"));
+    VideoFolderModel model;
+    model.setFolder(QUrl::fromLocalFile(dir.path()));
+
+    QSignalSpy finished(&model, &VideoFolderModel::trashFinished);
+    model.trash({QUrl::fromLocalFile(dir.filePath("a.mp4")), QUrl::fromLocalFile(dir.filePath("sub"))}, true);
+    QTRY_COMPARE(finished.count(), 1);
+    QCOMPARE(finished.at(0).at(0).toList().size(), 2);
+    QVERIFY(finished.at(0).at(1).toList().isEmpty());
+    QVERIFY(!QFileInfo::exists(dir.filePath("a.mp4")));
+    QVERIFY(!QFileInfo::exists(dir.filePath("sub")));
+    QTRY_COMPARE(model.count(), 0);
+}
+
+void TestVideoFolderModel::insideFolders()
+{
+    const auto url = [](const char *p) { return QUrl::fromLocalFile(p); };
+    QVERIFY(VideoFolderModel::isInside(url("/a/b/c.mp4"), url("/a/b")));
+    QVERIFY(VideoFolderModel::isInside(url("/a/b"), url("/a/b")));
+    QVERIFY(VideoFolderModel::isInside(url("/a/b/c.mp4"), url("/a/b/c.mp4")));
+    QVERIFY(!VideoFolderModel::isInside(url("/a/bc/d.mp4"), url("/a/b")));
+    QVERIFY(!VideoFolderModel::isInside(url("/a"), url("/a/b")));
 }
 
 QTEST_GUILESS_MAIN(TestVideoFolderModel)

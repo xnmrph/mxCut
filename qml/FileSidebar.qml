@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Controls.Material
 import QtQuick.Layouts
 import MxCut
 
@@ -16,6 +17,18 @@ Rectangle {
     signal folderOpened(url url)
     signal chooseFolder()
     signal closeRequested()
+    // File actions; the window does them, as it may have to let go of the
+    // video first.
+    signal renameRequested(url url, string newName)
+    signal deleteRequested(var urls, bool permanently)
+
+    // Selected cards, as a set of URL strings. A click selects one card,
+    // Ctrl+click adds or removes one, Shift+click selects a run of them.
+    property var selection: ({})
+    readonly property int selectionCount: Object.keys(selection).length
+    property string anchorUrl
+    // The card whose name is being edited.
+    property string renamingUrl
 
     color: Theme.surface
 
@@ -69,6 +82,226 @@ Rectangle {
     }
 
     readonly property var sortNames: ["Newest", "Oldest", "Name", "Largest"]
+    readonly property string trashName: Qt.platform.os === "windows" ? "Recycle Bin" : "Trash"
+
+    // The selected items still in the folder, in the order shown.
+    function selectedUrls() {
+        const urls = []
+        for (let row = 0; row < folderModel.count; ++row) {
+            const url = folderModel.urlAt(row)
+            if (selection[String(url)] === true)
+                urls.push(url)
+        }
+        return urls
+    }
+
+    function select(urls) {
+        const set = {}
+        for (const url of urls)
+            set[String(url)] = true
+        selection = set
+    }
+
+    function cardClicked(info, button, modifiers) {
+        const key = String(info.url)
+        if (button === Qt.RightButton) {
+            if (selection[key] !== true) {
+                select([info.url])
+                anchorUrl = key
+            }
+            cardMenu.targets = selectedUrls()
+            cardMenu.popup()
+            return
+        }
+        if (modifiers & Qt.ShiftModifier && anchorUrl !== "") {
+            const from = folderModel.indexOf(anchorUrl), to = folderModel.indexOf(info.url)
+            if (from >= 0 && to >= 0) {
+                const urls = []
+                for (let row = Math.min(from, to); row <= Math.max(from, to); ++row)
+                    urls.push(folderModel.urlAt(row))
+                select(urls)
+                return
+            }
+        }
+        if (modifiers & Qt.ControlModifier) {
+            const set = Object.assign({}, selection)
+            if (set[key] === true)
+                delete set[key]
+            else
+                set[key] = true
+            selection = set
+            anchorUrl = key
+            return
+        }
+        select([info.url])
+        anchorUrl = key
+        if (info.isFolder)
+            folderOpened(info.url)
+        else
+            videoSelected(info.url)
+    }
+
+    function startRename(url) {
+        if (folderModel.queue && folderModel.queue.busyWith(url)) {
+            showMessage("That's being trimmed right now, so it can't be renamed yet.")
+            return
+        }
+        renamingUrl = String(url)
+        grid.showRow(folderModel.indexOf(url))
+    }
+
+    function confirmDelete(urls) {
+        if (urls.length === 0)
+            return
+        deleteDialog.urls = urls
+        deleteDialog.permanently = false
+        deleteDialog.open()
+    }
+
+    // The trash wasn't possible; ask before deleting for good.
+    function offerPermanentDelete(urls, error) {
+        deleteDialog.urls = urls
+        deleteDialog.permanently = true
+        deleteDialog.reason = error
+        deleteDialog.open()
+    }
+
+    function copyPaths(urls) {
+        clipboardHelper.text = urls.map(u => folderModel.nativePath(u)).join("\n")
+        clipboardHelper.selectAll()
+        clipboardHelper.copy()
+        showMessage(urls.length === 1 ? "Path copied" : urls.length + " paths copied", false)
+    }
+
+    function showMessage(text, isError) {
+        message.text = text
+        message.isError = isError !== false
+        messageTimer.restart()
+    }
+
+    function describe(urls) {
+        if (urls.length === 1)
+            return "\u201c" + decodeURIComponent(String(urls[0]).substring(String(urls[0]).lastIndexOf("/") + 1)) + "\u201d"
+        return urls.length + " items"
+    }
+
+    Connections {
+        target: root.folderModel
+        function onFolderChanged() {
+            root.selection = {}
+            root.anchorUrl = ""
+            root.renamingUrl = ""
+        }
+    }
+
+    // Copying to the clipboard goes through a text field, which QML can do
+    // without help.
+    TextEdit {
+        id: clipboardHelper
+        visible: false
+    }
+
+    Shortcut {
+        sequences: [StandardKey.Delete]
+        enabled: root.visible && root.selectionCount > 0 && root.renamingUrl === "" && !root.typing()
+        onActivated: root.confirmDelete(root.selectedUrls())
+    }
+    Shortcut {
+        sequence: "F2"
+        enabled: root.visible && root.selectionCount === 1 && root.renamingUrl === "" && !root.typing()
+        onActivated: { const urls = root.selectedUrls(); if (urls.length === 1) root.startRename(urls[0]) }
+    }
+    Shortcut {
+        sequence: StandardKey.SelectAll
+        enabled: root.visible && !root.typing()
+        onActivated: {
+            const urls = []
+            for (let row = 0; row < root.folderModel.count; ++row)
+                urls.push(root.folderModel.urlAt(row))
+            root.select(urls)
+        }
+    }
+    function typing() {
+        const item = Window.activeFocusItem
+        return item !== null && typeof item.cursorPosition === "number"
+    }
+
+    Menu {
+        id: cardMenu
+        property var targets: []
+        readonly property bool busy: {
+            const queue = root.folderModel.queue
+            return queue !== null && targets.some(u => queue.busyWith(u))
+        }
+
+        MenuItem {
+            text: "Rename"
+            enabled: cardMenu.targets.length === 1 && !cardMenu.busy
+            onTriggered: root.startRename(cardMenu.targets[0])
+        }
+        MenuItem {
+            text: cardMenu.targets.length > 1 ? "Copy paths" : "Copy path"
+            onTriggered: root.copyPaths(cardMenu.targets)
+        }
+        MenuSeparator {}
+        MenuItem {
+            text: cardMenu.targets.length > 1 ? "Delete " + cardMenu.targets.length + " items" : "Delete"
+            enabled: !cardMenu.busy
+            onTriggered: root.confirmDelete(cardMenu.targets)
+        }
+    }
+
+    Dialog {
+        id: deleteDialog
+        property var urls: []
+        property bool permanently: false
+        property string reason
+        readonly property bool hasFolder: urls.some(u => root.folderModel.isFolder(u))
+
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(420, parent ? parent.width - 40 : 420)
+        modal: true
+        padding: 20
+        background: Rectangle {
+            color: Theme.surfaceRaised
+            radius: Theme.radius + 4
+            border.color: Theme.border
+        }
+        Overlay.modal: Rectangle { color: Qt.rgba(0, 0, 0, 0.6) }
+        title: permanently ? "Delete for good?" : "Delete " + root.describe(urls) + "?"
+
+        contentItem: Text {
+            wrapMode: Text.WordWrap
+            color: Theme.textDim
+            font.pixelSize: 13
+            text: deleteDialog.permanently
+                  ? deleteDialog.reason + " Delete " + root.describe(deleteDialog.urls)
+                    + " permanently instead? This can't be undone."
+                  : (deleteDialog.urls.length === 1 ? "It" : "They") + " will be moved to the " + root.trashName
+                    + (deleteDialog.hasFolder ? ", folders with everything in them" : "")
+                    + ". You can put " + (deleteDialog.urls.length === 1 ? "it" : "them") + " back from there."
+        }
+
+        footer: DialogButtonBox {
+            Button {
+                text: "Cancel"
+                flat: true
+                DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
+            }
+            Button {
+                text: deleteDialog.permanently ? "Delete permanently" : "Move to " + root.trashName
+                highlighted: true
+                Material.accent: Theme.danger
+                DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole
+            }
+        }
+
+        onAccepted: {
+            root.select([])
+            root.deleteRequested(urls, permanently)
+        }
+    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -326,7 +559,9 @@ Rectangle {
             // Keep the video being edited in view as it changes, from the
             // keyboard or after adding one to the queue.
             function showCurrent() {
-                const row = root.folderModel.indexOf(root.currentUrl)
+                showRow(root.folderModel.indexOf(root.currentUrl))
+            }
+            function showRow(row) {
                 if (row < 0)
                     return
                 const rows = root.cardRows
@@ -394,7 +629,7 @@ Rectangle {
                     Repeater {
                         model: cardRow.modelData.count
 
-                        AbstractButton {
+                        Item {
                             id: card
                             required property int index
                             readonly property int row: cardRow.modelData.start + index
@@ -406,23 +641,29 @@ Rectangle {
                             readonly property var status: info.isFolder ? null : root.badge(info.queueState)
                             readonly property bool queued: info.queueState === TrimJob.Idle
                                                            || info.queueState === TrimJob.Running
+                            readonly property bool hovered: cardMouse.containsMouse
+                            readonly property bool selected: root.selection[String(info.url)] === true
+                            // A lone selection on the video being edited needs no extra mark.
+                            readonly property bool showSelected: selected && (root.selectionCount > 1 || !current)
+                            readonly property bool renaming: root.renamingUrl !== "" && root.renamingUrl === String(info.url)
 
                             width: root.cardWidth
                             // Folders are a compact row; videos a thumbnail card.
                             height: info.isFolder ? 46 : thumb.height + 44
-                            hoverEnabled: true
-                            onClicked: info.isFolder ? root.folderOpened(info.url) : root.videoSelected(info.url)
 
-                            ToolTip.visible: hovered && nameText.truncated
+                            ToolTip.visible: hovered && nameText.truncated && !renaming
                             ToolTip.delay: 600
                             ToolTip.text: info.name
 
-                            background: Rectangle {
+                            Rectangle {
+                                anchors.fill: parent
                                 radius: Theme.radius
-                                color: card.hovered ? Theme.hover : Theme.surfaceRaised
+                                color: card.showSelected ? Qt.rgba(0.18, 0.55, 1, card.hovered ? 0.3 : 0.22)
+                                     : card.hovered ? Theme.hover : Theme.surfaceRaised
                             }
 
-                            contentItem: Item {
+                            Item {
+                                anchors.fill: parent
                                 Rectangle {
                                     id: thumb
                                     visible: !card.info.isFolder
@@ -544,6 +785,7 @@ Rectangle {
                                     anchors.topMargin: card.info.isFolder ? 8 : 7
                                     x: card.info.isFolder ? 38 : 9
                                     width: parent.width - x - 9
+                                    visible: !card.renaming
                                     text: card.info.name
                                     color: Theme.text
                                     font.pixelSize: 12
@@ -572,14 +814,113 @@ Rectangle {
                                 }
                             }
 
+                            // Selected cards get a tick in the corner.
+                            Rectangle {
+                                visible: card.showSelected
+                                anchors.right: parent.right
+                                anchors.top: parent.top
+                                anchors.margins: 6
+                                width: 18
+                                height: 18
+                                radius: 9
+                                color: Theme.accent
+                                border.color: "white"
+                                border.width: 1.5
+                                z: 2
+                                Icon {
+                                    anchors.centerIn: parent
+                                    path: Icons.check
+                                    size: 12
+                                    color: "white"
+                                }
+                            }
+
                             // Queued and current cards are outlined; drawn on top
                             // so the outline covers the thumbnail's corners.
                             Rectangle {
                                 anchors.fill: parent
                                 radius: Theme.radius
                                 color: "transparent"
-                                border.width: card.current || card.queued ? 2 : 1
-                                border.color: card.current ? Theme.text : card.queued ? Theme.accent : Theme.border
+                                border.width: card.current || card.queued || card.showSelected ? 2 : 1
+                                border.color: card.current ? Theme.text : card.queued || card.showSelected ? Theme.accent : Theme.border
+                            }
+
+                            MouseArea {
+                                id: cardMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                                onClicked: (mouse) => root.cardClicked(card.info, mouse.button, mouse.modifiers)
+                            }
+
+                            // Renaming happens in place, over the name. A video's
+                            // extension stays as it is.
+                            Rectangle {
+                                visible: card.renaming
+                                x: nameText.x - 4
+                                y: nameText.y - 4
+                                width: parent.width - x - 5
+                                height: 22
+                                radius: 4
+                                color: Theme.background
+                                border.color: Theme.accent
+                                z: 3
+
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 4
+                                    anchors.rightMargin: 4
+                                    spacing: 0
+                                    TextInput {
+                                        id: renameField
+                                        Layout.fillWidth: true
+                                        clip: true
+                                        color: Theme.text
+                                        selectionColor: Theme.accent
+                                        selectedTextColor: "white"
+                                        font.pixelSize: 12
+                                        selectByMouse: true
+                                        property bool done: false
+                                        readonly property string fullName: text + card.extension
+
+                                        function finish(commit) {
+                                            if (done)
+                                                return
+                                            done = true
+                                            if (commit && fullName !== card.info.name)
+                                                root.renameRequested(card.info.url, fullName)
+                                            root.renamingUrl = ""
+                                        }
+                                        onAccepted: {
+                                            const error = root.folderModel.renameError(card.info.url, fullName)
+                                            if (error !== "")
+                                                root.showMessage(error)
+                                            else
+                                                finish(true)
+                                        }
+                                        Keys.onEscapePressed: finish(false)
+                                        onActiveFocusChanged: if (!activeFocus && card.renaming) finish(root.folderModel.renameError(card.info.url, fullName) === "")
+                                    }
+                                    Text {
+                                        text: card.extension
+                                        color: Theme.textFaint
+                                        font.pixelSize: 12
+                                    }
+                                }
+                            }
+                            readonly property string extension: {
+                                if (info.isFolder)
+                                    return ""
+                                const dot = info.name.lastIndexOf(".")
+                                return dot > 0 ? info.name.substring(dot) : ""
+                            }
+                            onRenamingChanged: {
+                                if (!renaming)
+                                    return
+                                renameField.done = false
+                                renameField.text = info.name.substring(0, info.name.length - extension.length)
+                                renameField.selectAll()
+                                renameField.forceActiveFocus()
                             }
                         }
                     }
@@ -614,19 +955,36 @@ Rectangle {
             Layout.bottomMargin: 8
             spacing: 7
             Icon {
+                visible: !messageTimer.running
                 path: Icons.pin
                 size: 13
                 color: Theme.textFaint
             }
             ToolTip.visible: footerHover.hovered
-            ToolTip.text: "This folder opens when mxCut starts, until you close it with ×."
+            ToolTip.text: messageTimer.running ? message.text : "This folder opens when mxCut starts, until you close it with ×."
             HoverHandler { id: footerHover }
             Text {
                 Layout.fillWidth: true
-                text: "Reopens at next launch"
+                visible: !messageTimer.running
+                text: root.selectionCount > 1 ? root.selectionCount + " selected  ·  right-click for actions"
+                                              : "Reopens at next launch"
                 color: Theme.textFaint
                 font.pixelSize: 11
                 elide: Text.ElideRight
+            }
+            // Results and problems from the file actions, for a few seconds.
+            Text {
+                id: message
+                property bool isError: true
+                Layout.fillWidth: true
+                visible: messageTimer.running
+                color: isError ? Theme.danger : Theme.success
+                font.pixelSize: 11
+                elide: Text.ElideRight
+                Timer {
+                    id: messageTimer
+                    interval: 6000
+                }
             }
         }
     }

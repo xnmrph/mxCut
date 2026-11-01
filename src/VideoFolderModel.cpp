@@ -53,6 +53,9 @@ bool naturalLess(const QString &a, const QString &b)
 }
 
 constexpr int kMaxThumbnailJobs = 2;
+// Another program may hold a file for a moment (the player closing it, say).
+constexpr int kFileRetryMs = 250;
+constexpr int kFileTries = 16;
 constexpr int kThumbnailWidth = 320;
 
 QStringList videoFilters()
@@ -601,4 +604,146 @@ void VideoFolderModel::thumbnailFinished(QProcess *process, int entry, const QSt
         entryChanged(entry, {DurationRole, CutsRole});
     }
     startThumbnails();
+}
+
+QString VideoFolderModel::renameError(const QUrl &url, const QString &newName) const
+{
+    const QFileInfo info(url.toLocalFile());
+    const QString name = newName.trimmed();
+    if (name.isEmpty())
+        return tr("Enter a name.");
+    if (name == QLatin1String(".") || name == QLatin1String(".."))
+        return tr("That name can't be used.");
+    // Characters Windows refuses, and the separators everywhere.
+    static const QRegularExpression bad(QStringLiteral("[<>:\"/\\\\|?*\\x00-\\x1f]"));
+    if (name.contains(bad))
+        return tr("Names can't contain any of  < > : \" / \\ | ? *");
+    if (name.endsWith(QLatin1Char('.')) || name.endsWith(QLatin1Char(' ')))
+        return tr("Names can't end with a dot or a space.");
+    if (name == info.fileName())
+        return {};
+    const QString target = info.dir().filePath(name);
+    // A change of case alone is the same file on Windows and macOS.
+    if (QFileInfo::exists(target) && name.compare(info.fileName(), Qt::CaseInsensitive) != 0)
+        return tr("There's already something called “%1” here.").arg(name);
+    return {};
+}
+
+void VideoFolderModel::rename(const QUrl &url, const QString &newName)
+{
+    const QString error = renameError(url, newName);
+    if (!error.isEmpty()) {
+        emit renameFailed(url, error);
+        return;
+    }
+    const QFileInfo info(url.toLocalFile());
+    const QString to = info.dir().filePath(newName.trimmed());
+    if (to == info.absoluteFilePath()) {
+        emit renamed(url, url);
+        return;
+    }
+    tryRename(info.absoluteFilePath(), to, 0);
+}
+
+void VideoFolderModel::tryRename(const QString &from, const QString &to, int attempt)
+{
+    bool ok = false;
+    if (from.compare(to, Qt::CaseInsensitive) == 0) {
+        // Only the case changes: go through a temporary name, which some
+        // file systems need.
+        const QString temp = from + QStringLiteral(".mxcut-rename");
+        ok = QFile::rename(from, temp);
+        if (ok && !QFile::rename(temp, to)) {
+            QFile::rename(temp, from);
+            ok = false;
+        }
+    } else {
+        ok = QFile::rename(from, to);
+    }
+    if (ok) {
+        emit renamed(QUrl::fromLocalFile(from), QUrl::fromLocalFile(to));
+        m_refreshTimer.start();
+        return;
+    }
+    if (QFileInfo::exists(from) && attempt + 1 < kFileTries) {
+        QTimer::singleShot(kFileRetryMs, this, [this, from, to, attempt] { tryRename(from, to, attempt + 1); });
+        return;
+    }
+    emit renameFailed(QUrl::fromLocalFile(from),
+                      QFileInfo::exists(from) ? tr("“%1” couldn't be renamed. Another program may have it open.")
+                                                    .arg(QFileInfo(from).fileName())
+                                              : tr("“%1” isn't there any more.").arg(QFileInfo(from).fileName()));
+}
+
+void VideoFolderModel::trash(const QVariantList &urls, bool permanently)
+{
+    QStringList paths;
+    for (const QVariant &url : urls) {
+        const QString path = url.toUrl().toLocalFile();
+        if (!path.isEmpty() && !paths.contains(path))
+            paths << path;
+    }
+    tryTrash(paths, {}, {}, {}, permanently, 0);
+}
+
+void VideoFolderModel::tryTrash(QStringList pending, QVariantList removed, QVariantList failed, QString error,
+                                bool permanently, int attempt)
+{
+    while (!pending.isEmpty()) {
+        const QString path = pending.first();
+        const QFileInfo info(path);
+        bool ok = !info.exists() && !info.isSymLink();
+        if (!ok) {
+            if (permanently)
+                ok = info.isDir() && !info.isSymLink() ? QDir(path).removeRecursively() : QFile::remove(path);
+            else
+                ok = QFile::moveToTrash(path);
+        }
+        if (!ok && attempt + 1 < kFileTries && QFileInfo::exists(path)) {
+            // Try this one again shortly; the rest wait their turn.
+            QTimer::singleShot(kFileRetryMs, this, [=] {
+                tryTrash(pending, removed, failed, error, permanently, attempt + 1);
+            });
+            return;
+        }
+        if (ok) {
+            removed << QUrl::fromLocalFile(path);
+        } else {
+            failed << QUrl::fromLocalFile(path);
+            if (error.isEmpty())
+                error = permanently ? tr("“%1” couldn't be deleted. Another program may have it open.").arg(info.fileName())
+                                    : tr("“%1” couldn't be moved to the %2.")
+                                          .arg(info.fileName(),
+#ifdef Q_OS_WIN
+                                               tr("Recycle Bin")
+#else
+                                               tr("Trash")
+#endif
+                                          );
+        }
+        pending.removeFirst();
+        attempt = 0;
+    }
+    if (!removed.isEmpty())
+        m_refreshTimer.start();
+    emit trashFinished(removed, failed, error);
+}
+
+QString VideoFolderModel::nativePath(const QUrl &url) const
+{
+    return QDir::toNativeSeparators(url.toLocalFile());
+}
+
+bool VideoFolderModel::isInside(const QUrl &path, const QUrl &folder)
+{
+    const QString p = QDir::cleanPath(path.toLocalFile());
+    const QString f = QDir::cleanPath(folder.toLocalFile());
+    if (p.isEmpty() || f.isEmpty())
+        return false;
+#ifdef Q_OS_WIN
+    const Qt::CaseSensitivity cs = Qt::CaseInsensitive;
+#else
+    const Qt::CaseSensitivity cs = Qt::CaseSensitive;
+#endif
+    return p.compare(f, cs) == 0 || p.startsWith(f.endsWith(QLatin1Char('/')) ? f : f + QLatin1Char('/'), cs);
 }
